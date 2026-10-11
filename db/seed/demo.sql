@@ -22,3 +22,18 @@ select knowledge.link('demo', 'demo#3', 'demo#2');
 
 select scratch.put('demo', 'sess-demo', 'seq 1 120',
   (select string_agg('line ' || g, E'\n' order by g) from generate_series(1, 120) g));
+
+set role agent;
+
+create table ds.demo_titles (id int, title text, verdict text);
+insert into ds.demo_titles (id, title, verdict) values
+  (1, 'senior backend engineer', 'good fit'),
+  (2, 'junior frontend developer', 'maybe'),
+  (3, 'staff data engineer', 'good fit'),
+  (4, 'product manager', 'skip'),
+  (5, 'devops engineer', 'maybe'),
+  (6, 'qa automation engineer', 'good fit'),
+  (7, 'engineering manager', 'skip');
+select ds.register('demo', 'demo_titles', 'seven sample title verdicts for the demo project');
+
+reset role;

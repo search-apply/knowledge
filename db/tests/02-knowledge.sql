@@ -319,3 +319,26 @@ begin
   assert cnt = 2, format('master import must load the two exported rows; got %s', cnt);
   reset role;
 end $$;
+
+-- Should_ListDatasets_When_RecallCalled (datasets case)
+
+-- break: recall's datasets section omits a registered table, shows a stale count instead of the
+-- live count, or still prints (none) once ds.catalog holds a row.
+do $$
+declare
+  r text;
+  ds_section text;
+  p_ds int;
+  p_open int;
+begin
+  create table ds.demo_titles (id int, title text, verdict text);
+  insert into ds.demo_titles (id, title, verdict) values
+    (1, 'a', 'x'), (2, 'b', 'x'), (3, 'c', 'x'), (4, 'd', 'x'), (5, 'e', 'x'), (6, 'f', 'x'), (7, 'g', 'x');
+  perform ds.register('t5ds', 'demo_titles', 'seven sample rows for the recall datasets test');
+
+  r := knowledge.recall('t5ds');
+  p_ds := position('## datasets' in r);
+  p_open := position('## open' in r);
+  ds_section := substring(r from p_ds for p_open - p_ds);
+  assert position('demo_titles: 7 rows' in ds_section) > 0, 'recall datasets section must show demo_titles: 7 rows';
+end $$;
