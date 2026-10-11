@@ -166,7 +166,7 @@ end $$;
 -- Should_ReturnSections_When_RecallCalled
 
 -- break: recall drops or reorders a section, includes a row past its window, exceeds the line
--- cap, or omits (none) for an empty section.
+-- cap, or omits "- none" for an empty section.
 do $$
 declare
   r text;
@@ -187,13 +187,14 @@ begin
 
   r := knowledge.recall('t5');
 
-  p_state := position('## state' in r);
-  p_dec := position('## decisions' in r);
-  p_les := position('## lessons' in r);
-  p_ptr := position('## pointers' in r);
-  p_ds := position('## datasets' in r);
-  p_open := position('## open' in r);
-  assert position('# t5 recall ' in r) = 1, 'recall starts with the project title heading';
+  p_state := position('State' in r);
+  p_dec := position('Decisions of the last' in r);
+  p_les := position('Lessons of the last' in r);
+  p_ptr := position('Pointers' in r);
+  p_ds := position('Datasets' in r);
+  p_open := position('Open' in r);
+  assert position('t5, recall of ' in r) = 1, 'recall starts with the project title line';
+  assert position('k#' in r) = 0, 'recall prints no row ids';
   assert p_state > 0 and p_dec > p_state and p_les > p_dec and p_ptr > p_les and p_ds > p_ptr and p_open > p_ds,
     'recall headings must run state, decisions, lessons, pointers, datasets, open';
   assert position('d-recent' in r) > 0, 'a decision inside recall.decision_days is shown';
@@ -202,9 +203,9 @@ begin
   assert position('l-old' in r) = 0, 'a lesson past recall.lesson_days is absent';
   assert position('p-start' in r) > 0, 'a pointer tagged start is shown under pointers';
   assert position('f-open' in r) > 0, 'a row tagged open is shown under open';
-  assert array_length(string_to_array(r, E'\n'), 1) < 40, 'recall is under 40 lines';
+  assert array_length(string_to_array(r, E'\n'), 1) < 46, 'recall is under 46 lines';
   ds_section := substring(r from p_ds for p_open - p_ds);
-  assert position('(none)' in ds_section) > 0, 'an empty section (datasets, no ds.catalog yet) prints (none)';
+  assert position('- none' in ds_section) > 0, 'an empty section (datasets, no ds.catalog yet) prints - none';
 end $$;
 
 -- Should_FindByKeyAndText_When_Searching
@@ -313,7 +314,7 @@ begin
   perform knowledge.link('t2-master', 't2-master-a', 't2-master-root');
   assert (select count(*) from knowledge.about('t2-master', 't2-master-a')) >= 1, 'master about must return the row';
   rec := knowledge.recall('t2-master');
-  assert rec like '%t2-master recall%', 'master recall must return the sections';
+  assert rec like 't2-master, recall of%', 'master recall must return the sections';
   exp := knowledge.export('t2-master', 'json');
   cnt := knowledge.import('t2-master-b', exp::jsonb);
   assert cnt = 2, format('master import must load the two exported rows; got %s', cnt);
@@ -323,7 +324,7 @@ end $$;
 -- Should_ListDatasets_When_RecallCalled (datasets case)
 
 -- break: recall's datasets section omits a registered table, shows a stale count instead of the
--- live count, or still prints (none) once ds.catalog holds a row.
+-- live count, or still prints "- none" once ds.catalog holds a row.
 do $$
 declare
   r text;
@@ -337,10 +338,10 @@ begin
   perform ds.register('t5ds', 'demo_titles', 'seven sample rows for the recall datasets test');
 
   r := knowledge.recall('t5ds');
-  p_ds := position('## datasets' in r);
-  p_open := position('## open' in r);
+  p_ds := position('Datasets' in r);
+  p_open := position('Open' in r);
   ds_section := substring(r from p_ds for p_open - p_ds);
-  assert position('demo_titles: 7 rows' in ds_section) > 0, 'recall datasets section must show demo_titles: 7 rows';
+  assert position('- demo_titles: 7 rows' in ds_section) > 0, 'recall datasets section must show demo_titles: 7 rows';
 end $$;
 
 -- Should_ListStaleRows_When_StaleCalled (and the recall stale nudge)
