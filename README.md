@@ -16,8 +16,8 @@ is the bundled `demo` project. Your own project starts empty and fills up as you
 demo, recall of 2026-10-11
 
 State
-- runs: api and worker containers are up
 - release: the next release is in progress
+- runs: api and worker containers are up
 
 Decisions of the last 30 days
 - ui: front the store with a generic postgres mcp server
