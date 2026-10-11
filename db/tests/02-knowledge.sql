@@ -94,6 +94,19 @@ begin
   assert v_val = 'from-agent', 'master must be able to read a table agent made';
 end $$;
 
+-- break: the agent role cannot register or deregister its own table in knowledge.datasets.
+do $$
+declare n int;
+begin
+  insert into knowledge.projects (name) values ('t-datasets') on conflict do nothing;
+  set role agent;
+  insert into knowledge.datasets (table_name, project, what) values ('t_agent_made', 't-datasets', 'test table');
+  delete from knowledge.datasets where table_name = 't_agent_made';
+  reset role;
+  select count(*) into n from knowledge.datasets where table_name = 't_agent_made';
+  assert n = 0, 'agent must be able to insert and delete its own datasets row';
+end $$;
+
 do $$
 declare v_val text;
 begin

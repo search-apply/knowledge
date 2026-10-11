@@ -67,6 +67,7 @@ create table knowledge.datasets (
 grant select, insert, update, delete on all tables in schema knowledge to master;
 grant usage, select on all sequences in schema knowledge to master;
 grant select on all tables in schema knowledge to agent;
+grant insert, delete on knowledge.datasets to agent;
 alter default privileges for role master in schema knowledge grant select on tables to agent;
 alter default privileges for role agent in schema knowledge grant all on tables to master;
 alter role agent set statement_timeout = '5s';
