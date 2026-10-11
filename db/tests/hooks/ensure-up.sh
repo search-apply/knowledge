@@ -28,6 +28,7 @@ cleanup() {
   docker rm -f "$KNOWLEDGE_CONTAINER" >/dev/null 2>&1 || true
   docker volume rm "$KNOWLEDGE_VOLUME" >/dev/null 2>&1 || true
   docker network rm "$KNOWLEDGE_NETWORK" >/dev/null 2>&1 || true
+  docker network rm "$KNOWLEDGE_CONTAINER" >/dev/null 2>&1 || true
   rm -rf "$TMP_ENV" "$TMP_ABSENT"
 }
 trap cleanup EXIT INT TERM
@@ -98,7 +99,30 @@ case_stopped_started() {
   pass "$name"
 }
 
+# 4: a network with the exact name of the (not yet existing) container must not be mistaken for
+# it by the container-existence check -- the blocker this hop fixes. A bare `docker inspect` of
+# the name matches the network too, so the old code took the "container exists" branch and never
+# created one; `docker container inspect` must not.
+case_network_name_collision() {
+  local name="network-named-like-container-is-not-mistaken-for-it"
+  docker network create "$KNOWLEDGE_CONTAINER" >/dev/null 2>&1 \
+    || { fail "$name" "could not create the colliding network"; return; }
+  (
+    export HOME="$TMP_ENV" KNOWLEDGE_AUTOUP=on KNOWLEDGE_WAIT_SECS=30
+    export POSTGRES_PASSWORD=zs KNOWLEDGE_MASTER_PASSWORD=zs KNOWLEDGE_AGENT_PASSWORD=zs KNOWLEDGE_HOOK_PASSWORD=zs
+    ensure_up >/dev/null 2>&1 || true
+  )
+  if ! container_is_running; then
+    fail "$name" "ensure_up did not create/start the container while a same-named network existed"
+    docker network rm "$KNOWLEDGE_CONTAINER" >/dev/null 2>&1 || true
+    return
+  fi
+  docker network rm "$KNOWLEDGE_CONTAINER" >/dev/null 2>&1 || true
+  pass "$name"
+}
+
 case_docker_absent
+case_network_name_collision
 if precreate_container; then
   case_env_created
   case_stopped_started

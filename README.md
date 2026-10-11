@@ -32,7 +32,7 @@ demo_titles: 7 rows, seven sample title verdicts for the demo project
 ## Requirements
 
 - Docker running (Docker Desktop on macOS, or the Docker engine on Linux).
-- macOS or Linux, with `bash` and `jq` on the PATH.
+- macOS or Linux, with `bash` and `jq` on the PATH; without it the scratch wrapper is off.
 - Windows is supported only through WSL, and is untested.
 
 That is all. The plugin pulls the Postgres and MCP images itself on first use.

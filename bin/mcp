@@ -14,15 +14,21 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT/hooks/lib.sh"
 
 role="${1:-}"
-load_env
 case "$role" in
-  master) user=master; pw="${KNOWLEDGE_MASTER_PASSWORD:-}" ;;
-  agent)  user=agent;  pw="${KNOWLEDGE_AGENT_PASSWORD:-}" ;;
+  master) user=master ;;
+  agent)  user=agent ;;
   *) echo "mcp: role must be master or agent" >&2; exit 2 ;;
 esac
 
 # About to connect: give a cold start up to 30s, but still fail open and exec regardless.
 KNOWLEDGE_WAIT_SECS="${KNOWLEDGE_WAIT_SECS:-30}" ensure_up || true
+# load_env again: a first-ever cold start writes the env file inside ensure_up, after the call
+# above would have sourced it; without this, the password below is empty.
+load_env
+case "$role" in
+  master) pw="${KNOWLEDGE_MASTER_PASSWORD:-}" ;;
+  agent)  pw="${KNOWLEDGE_AGENT_PASSWORD:-}" ;;
+esac
 
 container="$(knowledge_container)"
 network="${KNOWLEDGE_NETWORK:-knowledge}"
