@@ -6,29 +6,6 @@ through SQL functions as the whole tool surface, in front of a generic Postgres 
 plugin brings its own container up, so after you install it you only tell your model to use it.
 Nothing ever leaves your machine.
 
-Here is what a session sees first -- the recall of the bundled `demo` project:
-
-```
-# demo recall 2026-10-11
-## state
-k#2 release: the next release is in progress
-k#1 runs: api and worker containers are up
-## decisions (last 30 days)
-k#5 ui: front the store with a generic postgres mcp server
-k#4 store: add a ds schema for agent datasets
-## lessons (last 14 days)
-k#6 bash-wrap: a big command output must not sit in context
-## pointers
-k#7 start: read the brief before touching the schema
-## datasets
-demo_titles: 7 rows, seven sample title verdicts for the demo project
-## open
-(none)
-```
-
-(reproduce it: load `db/seed/demo.sql` into a container and run
-`select knowledge.recall('demo')` -- the exact steps are under Development.)
-
 ## Requirements
 
 - Docker running (Docker Desktop on macOS, or the Docker engine on Linux).
@@ -82,6 +59,31 @@ The curated store has eleven built-in kinds; a project adds its own with `add_ki
 - `environment` -- a fact about the running environment.
 - `recipe` -- a recipe with its steps.
 - `term` -- a defined term.
+
+Every row has a kind, a key and a text of at most three lines. At the start of each session the
+plugin prints the project's recall: the current state rows, the decisions of the last 30 days, the
+lessons of the last 14, the pointers, the datasets and the open items, one line per row. The line
+shape is `k#<id> <key>: <text>`, where `k#<id>` is the row's id, used to cite, read
+(`knowledge.get(4)`) or replace (`knowledge.supersede(4, ...)`) that row. Example, the recall of
+the bundled `demo` project (load `db/seed/demo.sql`, then `select knowledge.recall('demo')`):
+
+```
+# demo recall 2026-10-11
+## state
+k#2 release: the next release is in progress
+k#1 runs: api and worker containers are up
+## decisions (last 30 days)
+k#5 ui: front the store with a generic postgres mcp server
+k#4 store: add a ds schema for agent datasets
+## lessons (last 14 days)
+k#6 bash-wrap: a big command output must not sit in context
+## pointers
+k#7 start: read the brief before touching the schema
+## datasets
+demo_titles: 7 rows, seven sample title verdicts for the demo project
+## open
+(none)
+```
 
 ## How it works
 
