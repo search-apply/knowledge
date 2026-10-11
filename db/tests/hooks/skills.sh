@@ -26,11 +26,11 @@ check_phrase() {
   if grep -qF -- "$phrase" "$file"; then pass "phrase $1 <$phrase>"; else fail "phrase $1 <$phrase>" "not found"; fi
 }
 
-check_lines skills/knowledge/SKILL.md 54
+check_lines skills/knowledge/SKILL.md 59
 check_lines skills/datasets/SKILL.md 54
 check_lines skills/scratch/SKILL.md 54
 
-for p in recall search get about put supersede link add_kind "three lines" "main session"; do
+for p in "one sentence" search get about put supersede link add_kind "three lines" "main session"; do
   check_phrase skills/knowledge/SKILL.md "$p"
 done
 

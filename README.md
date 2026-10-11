@@ -7,37 +7,23 @@ all of it through plain SQL functions, behind a standard Postgres MCP server. Th
 own container, so after installing it you only tell your model to use it. Nothing leaves your
 machine.
 
-## What a session sees at start
+## What a session says at start
 
-When a session starts, and again after a compaction, the plugin prints the project's memory. This
-is the bundled `demo` project. Your own project starts empty and fills up as you work:
+When a session starts, the plugin makes sure the store is up. The model then looks at what is
+stored for the project and tells you in one sentence. On a new project:
 
 ```
-demo, recall of 2026-10-11
-
-State
-- release: the next release is in progress
-- runs: api and worker containers are up
-
-Decisions of the last 30 days
-- ui: front the store with a generic postgres mcp server
-- store: add a ds schema for agent datasets
-
-Lessons of the last 14 days
-- bash-wrap: a big command output must not sit in context
-
-Pointers
-- start: read the brief before touching the schema
-
-Datasets
-- demo_titles: 7 rows, seven sample title verdicts for the demo project
-
-Open
-- none
+The knowledge store is up. I will keep structured notes here on what we work on.
 ```
 
-Each line is one stored row: its key, then its text. Old decisions and lessons drop out of this
-view after a while, but they stay in the store and remain searchable.
+Later, with notes stored:
+
+```
+The knowledge store is up, with 14 notes on this project. The latest: the subscription ends at
+Stripe's cancel_at, never at the webhook time.
+```
+
+Nothing is printed by the plugin itself. The model reads the store and speaks.
 
 ## Requirements
 
@@ -66,7 +52,7 @@ On that first start the plugin, in the background:
 - pulls the Postgres MCP image
 
 The first start takes a few seconds. That first session prints one line saying the store is coming
-up and will be used from the next command on. Every session after that opens with the recall shown
+up and will be used from the next command on. Every session after that opens with the sentence shown
 above, for your project. If Docker is not running, the plugin says so once and stays out of the
 way.
 
@@ -135,20 +121,20 @@ or `scratch.grep`. Rows expire after seven days.
 | 12 | 7f3a... | docker logs api | 4812 | 2026-10-18 |
 
 `ds.catalog` is the index of the agent's data tables. The data itself is a plain table in the `ds`
-schema, one per dataset, registered here so that `recall` and `ds.list` show it.
+schema, one per dataset, registered here so that `ds.list` shows it.
 
 | table_name | project | summary | who |
 |---|---|---|---|
 | demo_titles | demo | seven sample title verdicts for the demo project | master |
 
-`knowledge.config` holds the few settings: the recall windows, how long scratch rows live, the
-digest size, the row cap and timeout for dataset queries. Each has a `*` default and can be set per
+`knowledge.config` holds the few settings: how long scratch rows live, the digest size, the row
+cap and timeout for dataset queries. Each has a `*` default and can be set per
 project.
 
 ### How an agent uses them
 
-- At session start the hook prints `knowledge.recall('<project>')`, the block at the top of this
-  file.
+- At session start the model reads the project's rows from `knowledge.current` and tells you in one
+  sentence what is there, as shown at the top of this file.
 - Before working on an issue: `select * from knowledge.about('<project>', '#12')` returns every row
   linked to that issue and its parents. `knowledge.search('<project>', 'webhook cancel')` searches
   by words.
@@ -169,8 +155,8 @@ project.
 Three stores share one Postgres database.
 
 - `knowledge` is curated and kept for years. Short rows of the kinds above, at most three lines
-  each. A new write on the same key supersedes the old one. Nothing is deleted. `recall` returns
-  the short text a session opens with. `search`, `get` and `list` read rows back.
+  each. A new write on the same key supersedes the old one. Nothing is deleted. `search`, `get` and
+  `list` read rows back, and the view `knowledge.current` holds the latest row of every key.
 - `scratch` is automatic and kept for days. A hook wraps every Bash command. When the output runs
   over a threshold (40 lines by default) the output is stored and the context gets a short digest
   instead: an id, a line count, the first and the last lines. The agent reads it back with
@@ -230,21 +216,21 @@ listed below. The store replaces a large paste with a small read.
 
 | case | inline tokens | with the store | saving |
 |---|---|---|---|
-| orientation at session start (newest handoff plus MEMORY.md, against the recall) | 6,449 | 125 | 6,324 |
+| orientation at session start (newest handoff plus MEMORY.md, against the stored rows) | 6,449 | 125 | 6,324 |
 | `git log`, 400 lines, against its digest | 4,440 | 118 | 4,322 |
 | `find / -name '*.sql'`, 352 lines, against its digest | 11,367 | 320 | 11,047 |
 | `db/tests/run.sh`, 13 lines, under the threshold | 286 | 286 | 0 |
 | 2000 data rows pasted, against one `ds.sql` summary | 10,956 | 447 | 10,509 |
 
-The 125 for orientation is the recall of the small twelve-row `demo` project. A real project's
-recall is capped at ten rows per section and will run to a few hundred tokens. Read 125 as the
-shape of the saving, not a fixed promise.
+The 125 for orientation is the twelve rows of the small `demo` project read back as text. A real
+project's rows will run to a few hundred tokens. Read 125 as the shape of the saving, not a fixed
+promise.
 
 How each number was taken:
 
 - Orientation: `wc -c` of the newest file in the Playbook handoffs folder (4,191 characters) plus
-  `wc -c` of `MEMORY.md` (21,607 characters) gives 25,798 characters inline. Against that,
-  `select knowledge.recall('demo')` on a seeded throwaway container gives 503 characters.
+  `wc -c` of `MEMORY.md` (21,607 characters) gives 25,798 characters inline. Against that, the
+  `demo` project's rows read back as text on a seeded throwaway container give 503 characters.
 - Scratch: each command's real output was stored and its digest read back. `git log | head -400`
   is 17,762 characters, its digest 473. `find / -name '*.sql' 2>/dev/null | head -2000` is 45,470
   characters (352 files found), its digest 1,283. `db/tests/run.sh` prints 1,144 characters in 13
@@ -354,7 +340,7 @@ with a `tests: N passed, M failed` line. Pass `--keep` to leave the container ru
 db/tests/run.sh
 ```
 
-To see the recall at the top of this file for yourself:
+To look at the bundled `demo` project yourself:
 
 ```
 docker run -d --name knowledge-try \
@@ -362,7 +348,7 @@ docker run -d --name knowledge-try \
   -e KNOWLEDGE_MASTER_PASSWORD=x -e KNOWLEDGE_AGENT_PASSWORD=x -e KNOWLEDGE_HOOK_PASSWORD=x \
   -v "$PWD/db/init:/docker-entrypoint-initdb.d:ro" postgres:18
 docker exec -i knowledge-try psql -U postgres -d knowledge < db/seed/demo.sql
-docker exec -i knowledge-try psql -U agent -d knowledge -qAt -c "select knowledge.recall('demo')"
+docker exec -i knowledge-try psql -U agent -d knowledge -c "select kind, key, text from knowledge.current where project = 'demo'"
 docker rm -f knowledge-try
 ```
 

@@ -15,7 +15,7 @@ select knowledge.put('demo', 'pointer', 'start', 'read the brief before touching
 
 select knowledge.put('demo', 'finding', 'schema-ready', 'the knowledge tables and functions pass their tests', '{"task":"T-12","hop":"functions","role":"backend-engineer"}'::jsonb);
 
-select knowledge.put('demo', 'term', 'recall', 'the short text a session reads when a project starts', '{"definition":"the short text a session reads when a project starts"}'::jsonb);
+select knowledge.put('demo', 'term', 'current', 'the latest row of every key, the view a session reads at the start', '{"definition":"the view knowledge.current: the newest row per project, kind and key"}'::jsonb);
 
 select knowledge.link('demo', 'demo-store-epic', 'demo-store-goal');
 select knowledge.link('demo', 'demo-store-task', 'demo-store-epic');

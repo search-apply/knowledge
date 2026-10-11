@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1 - unreleased
+
+- The session no longer prints a recall block. The model reads the project's rows from `knowledge.current` at the start and tells the user in one sentence what is there. `knowledge.recall` and its settings are removed.
+- README rewritten for a first-time reader: what the session says, how the data is stored, how an agent uses it.
+
 ## 0.1.0 - 2026-10-11
 
 First public version.

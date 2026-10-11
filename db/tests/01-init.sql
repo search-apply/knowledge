@@ -63,6 +63,6 @@ begin
     format('kinds: expected the eleven built-in kinds (11), found %s', kind_count);
 
   select count(*) into config_count from knowledge.config;
-  assert config_count = 8,
-    format('config: expected the eight `*` defaults (8), found %s', config_count);
+  assert config_count = 5,
+    format('config: expected the five `*` defaults (5), found %s', config_count);
 end $$;

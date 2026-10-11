@@ -1,6 +1,6 @@
 ---
 name: knowledge
-description: The curated store. Recall at the start, search by words and kind, get one row by id. The main session writes; spawned subagents only read. A row is at most three lines.
+description: The curated store. At the start, look at what is stored and tell the user in one sentence. Search by words and kind, get one row by id. The main session writes, spawned subagents only read. A row is at most three lines.
 user-invocable: false
 ---
 
@@ -29,8 +29,13 @@ session writes, spawned subagents read.
 | commit source | the commit it rode in on and where it came from |
 | who tags created_at superseded_by | author, tags, time, the newer row |
 
+## At the start of a session (main session)
+- Look at what is stored: `select kind, key, text from knowledge.current where project = '<project>' order by created_at desc limit 30;`
+- Then tell the user one sentence, never the query. Nothing stored: "The knowledge store is up. I will keep structured notes here on
+  what we work on." Rows found: "The knowledge store is up, with N notes on this project. The latest: <one line>."
+- Do the same after a compaction.
+
 ## Reading (either role)
-- Recall the project at the start: `select knowledge.recall('<project>');`
 - Search by words, optional kind: `select * from knowledge.search('<project>', 'webhook cancel', 'decision');`
 - Get one row by id: `select * from knowledge.get(42);`
 - List a kind newest first: `select * from knowledge.list('<project>', 'state');`

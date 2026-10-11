@@ -13,8 +13,8 @@ create table ds.catalog (
 
 create sequence ds.result_seq;
 
--- recall's datasets loop (knowledge.recall, 02-knowledge.sql) counts a catalogued table by its
--- bare name; put ds on every session's search_path so that unqualified lookup resolves.
+-- put ds on every session's search_path, so that an unqualified table name in the ds functions
+-- resolves to the ds schema.
 alter database knowledge set search_path = public, ds;
 
 -- functions

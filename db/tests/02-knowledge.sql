@@ -1,5 +1,5 @@
 -- 02-knowledge.sql: the failing tests for the knowledge schema and functions (tests-first).
--- Covers the grants, supersede and add_kind, the rejected puts, recall, search/get/list,
+-- Covers the grants, supersede and add_kind, the rejected puts, search/get/list,
 -- about, and export/import round-trip (the knowledge criteria of the epic).
 -- Run as postgres against a fresh postgres:18 container with db/init applied; a failing assert
 -- stops the file (psql -v ON_ERROR_STOP=1). Every block arranges its own rows inline under its
@@ -163,51 +163,6 @@ begin
   assert n = 0, 'a rejected put must change nothing';
 end $$;
 
--- Should_ReturnSections_When_RecallCalled
-
--- break: recall drops or reorders a section, includes a row past its window, exceeds the line
--- cap, or omits "- none" for an empty section.
-do $$
-declare
-  r text;
-  id_dold bigint;
-  id_lold bigint;
-  p_state int; p_dec int; p_les int; p_ptr int; p_ds int; p_open int;
-  ds_section text;
-begin
-  perform knowledge.put('t5', 'state', 'runs', 'service is up', '{"value":"up"}'::jsonb);
-  perform knowledge.put('t5', 'decision', 'd-recent', 'keep the window', '{"why":"w","options":"o","who_ruled":"master"}'::jsonb);
-  id_dold := knowledge.put('t5', 'decision', 'd-old', 'too old to show', '{"why":"w","options":"o","who_ruled":"master"}'::jsonb);
-  update knowledge.rows set created_at = now() - interval '31 days' where id = id_dold;
-  perform knowledge.put('t5', 'lesson', 'l-recent', 'a fresh lesson', '{"incident":"i","rule":"r"}'::jsonb);
-  id_lold := knowledge.put('t5', 'lesson', 'l-old', 'stale lesson', '{"incident":"i","rule":"r"}'::jsonb);
-  update knowledge.rows set created_at = now() - interval '15 days' where id = id_lold;
-  perform knowledge.put('t5', 'pointer', 'p-start', 'start here', '{"path":"/x","what":"start"}'::jsonb, tags := array['start']);
-  perform knowledge.put('t5', 'fact', 'f-open', 'an open thread', '{"verified_on":"2026-10-10","how":"checked"}'::jsonb, tags := array['open']);
-
-  r := knowledge.recall('t5');
-
-  p_state := position('State' in r);
-  p_dec := position('Decisions of the last' in r);
-  p_les := position('Lessons of the last' in r);
-  p_ptr := position('Pointers' in r);
-  p_ds := position('Datasets' in r);
-  p_open := position('Open' in r);
-  assert position('t5, recall of ' in r) = 1, 'recall starts with the project title line';
-  assert position('k#' in r) = 0, 'recall prints no row ids';
-  assert p_state > 0 and p_dec > p_state and p_les > p_dec and p_ptr > p_les and p_ds > p_ptr and p_open > p_ds,
-    'recall headings must run state, decisions, lessons, pointers, datasets, open';
-  assert position('d-recent' in r) > 0, 'a decision inside recall.decision_days is shown';
-  assert position('d-old' in r) = 0, 'a decision past recall.decision_days is absent';
-  assert position('l-recent' in r) > 0, 'a lesson inside recall.lesson_days is shown';
-  assert position('l-old' in r) = 0, 'a lesson past recall.lesson_days is absent';
-  assert position('p-start' in r) > 0, 'a pointer tagged start is shown under pointers';
-  assert position('f-open' in r) > 0, 'a row tagged open is shown under open';
-  assert array_length(string_to_array(r, E'\n'), 1) < 46, 'recall is under 46 lines';
-  ds_section := substring(r from p_ds for p_open - p_ds);
-  assert position('- none' in ds_section) > 0, 'an empty section (datasets, no ds.catalog yet) prints - none';
-end $$;
-
 -- Should_FindByKeyAndText_When_Searching
 
 -- break: search misses a word in the text, ignores the kind filter, returns a superseded row;
@@ -295,7 +250,7 @@ end $$;
 -- Should_EnforceGrants_When_MasterActs (knowledge part)
 
 -- break: master lacks select on knowledge.current, so every security invoker function that
--- reads the view (put, get, search, list, recall, about, export) raises insufficient_privilege
+-- reads the view (put, get, search, list, about, export) raises insufficient_privilege
 -- when run as master.
 do $$
 declare
@@ -313,47 +268,21 @@ begin
   assert (select count(*) from knowledge.list('t2-master', 'state')) >= 1, 'master list must find the row';
   perform knowledge.link('t2-master', 't2-master-a', 't2-master-root');
   assert (select count(*) from knowledge.about('t2-master', 't2-master-a')) >= 1, 'master about must return the row';
-  rec := knowledge.recall('t2-master');
-  assert rec like 't2-master, recall of%', 'master recall must return the sections';
   exp := knowledge.export('t2-master', 'json');
   cnt := knowledge.import('t2-master-b', exp::jsonb);
   assert cnt = 2, format('master import must load the two exported rows; got %s', cnt);
   reset role;
 end $$;
 
--- Should_ListDatasets_When_RecallCalled (datasets case)
+-- Should_ListStaleRows_When_StaleCalled
 
--- break: recall's datasets section omits a registered table, shows a stale count instead of the
--- live count, or still prints "- none" once ds.catalog holds a row.
-do $$
-declare
-  r text;
-  ds_section text;
-  p_ds int;
-  p_open int;
-begin
-  create table ds.demo_titles (id int, title text, verdict text);
-  insert into ds.demo_titles (id, title, verdict) values
-    (1, 'a', 'x'), (2, 'b', 'x'), (3, 'c', 'x'), (4, 'd', 'x'), (5, 'e', 'x'), (6, 'f', 'x'), (7, 'g', 'x');
-  perform ds.register('t5ds', 'demo_titles', 'seven sample rows for the recall datasets test');
-
-  r := knowledge.recall('t5ds');
-  p_ds := position('Datasets' in r);
-  p_open := position('Open' in r);
-  ds_section := substring(r from p_ds for p_open - p_ds);
-  assert position('- demo_titles: 7 rows' in ds_section) > 0, 'recall datasets section must show demo_titles: 7 rows';
-end $$;
-
--- Should_ListStaleRows_When_StaleCalled (and the recall stale nudge)
-
--- break: stale returns a fresh row, omits an aged row, ignores the environment kind, counts a
--- superseded row, or recall shows the trailing nudge at the wrong time.
+-- break: stale returns a fresh row, omits an aged row, ignores the environment kind, or counts a
+-- superseded row.
 do $$
 declare
   id_fresh bigint;
   id_old_state bigint;
   id_old_env bigint;
-  r text;
   stale_keys text[];
 begin
   id_fresh := knowledge.put('t-stale', 'state', 'fresh', 'just set', '{"value":"v"}'::jsonb);
@@ -368,17 +297,4 @@ begin
 
   perform knowledge.put('t-stale', 'state', 'old', 'set again just now', '{"value":"v"}'::jsonb);
   assert not exists (select 1 from knowledge.stale('t-stale', 30) s where s.key = 'old'), 'a re-put row is no longer stale';
-
-  r := knowledge.recall('t-stale');
-  assert position('stale over 30 days' in r) > 0, 'recall ends with the stale nudge while an aged row remains';
-  assert position('knowledge.stale(''t-stale'', 30)' in r) > 0, 'the nudge names the call that lists the stale rows';
-end $$;
-
--- break: recall prints a stale line for a project with nothing stale.
-do $$
-declare r text;
-begin
-  perform knowledge.put('t-stale-clean', 'state', 'runs', 'up now', '{"value":"v"}'::jsonb);
-  r := knowledge.recall('t-stale-clean');
-  assert position('stale over' in r) = 0, 'recall adds no stale line when nothing is stale';
 end $$;

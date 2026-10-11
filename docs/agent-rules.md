@@ -5,7 +5,7 @@ carries the same rules the skills teach. Reach every function through the MCP `e
 `<project>` is this repository's name unless you set `KNOWLEDGE_PROJECT`.
 
 ## knowledge (curated, kept for years)
-- Start by recalling the project: `select knowledge.recall('<project>');`
+- Start by looking at what is stored: `select kind, key, text from knowledge.current where project = '<project>' order by created_at desc limit 30;` then tell the user in one sentence whether the store is up and what is there. Never show the query.
 - Find things: `select * from knowledge.search('<project>', 'some words', 'decision');`
   one row: `select * from knowledge.get(42);` a kind: `select * from knowledge.list('<project>','state');`
 - The main session connects as `master` and may write; a spawned subagent connects as `agent` and
