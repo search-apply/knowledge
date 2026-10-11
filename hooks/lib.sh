@@ -23,7 +23,7 @@ newest_dump_age_hours() {
   if [ -d "$dir" ]; then
     shopt -s nullglob
     for f in "$dir"/*.dump; do
-      mtime=$(stat -f '%m' "$f" 2>/dev/null || stat -c '%Y' "$f" 2>/dev/null || echo 0)
+      mtime=$(stat -c '%Y' "$f" 2>/dev/null || stat -f '%m' "$f" 2>/dev/null || echo 0)
       [ "$mtime" -gt "$newest" ] && newest="$mtime"
     done
     shopt -u nullglob
