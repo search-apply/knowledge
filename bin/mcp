@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# mcp <master|agent>: the command .mcp.json runs for each knowledge MCP server. Sources the env,
+# brings the store up (a longer bounded wait, since it is about to connect), then execs the same
+# docker run of the Postgres MCP server .mcp.json used to run inline -- but the DATABASE_URI, with
+# its password, is built here from the env and passed only as a process environment variable, so
+# no config file ever holds the password.
+# The database is unreachable only during a first-ever cold start; the MCP server is started by the
+# client and will surface as failed until the store finishes coming up (a later /mcp reconnect, or
+# the next session, attaches it). See the README troubleshooting section.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=../hooks/lib.sh
+source "$ROOT/hooks/lib.sh"
+
+role="${1:-}"
+load_env
+case "$role" in
+  master) user=master; pw="${KNOWLEDGE_MASTER_PASSWORD:-}" ;;
+  agent)  user=agent;  pw="${KNOWLEDGE_AGENT_PASSWORD:-}" ;;
+  *) echo "mcp: role must be master or agent" >&2; exit 2 ;;
+esac
+
+# About to connect: give a cold start up to 30s, but still fail open and exec regardless.
+KNOWLEDGE_WAIT_SECS="${KNOWLEDGE_WAIT_SECS:-30}" ensure_up || true
+
+container="$(knowledge_container)"
+network="${KNOWLEDGE_NETWORK:-knowledge}"
+image="${KNOWLEDGE_MCP_IMAGE:-crystaldba/postgres-mcp}"
+
+export DATABASE_URI="postgresql://${user}:${pw}@${container}:5432/knowledge"
+exec docker run -i --rm --network "$network" -e DATABASE_URI "$image" --access-mode=unrestricted

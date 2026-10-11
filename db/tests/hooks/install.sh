@@ -19,7 +19,7 @@ fail() { printf 'FAIL %s: %s\n' "$1" "$2"; fails=$((fails + 1)); }
 
 master_q() { docker exec -i "$KNOWLEDGE_CONTAINER" psql -U master -d knowledge -v ON_ERROR_STOP=1 -qAt -c "$1"; }
 
-# AC-3 Should_RecallExpireAndDump_When_SessionStarts
+# Should_RecallExpireAndDump_When_SessionStarts
 case_recall_and_expire() {
   local name="recall-and-expire" out sess="t6-exp-$$" remaining
   if [ ! -x "$SESSION_START" ]; then fail "$name" "hooks/session-start.sh not found or not executable"; return; fi
@@ -36,7 +36,7 @@ case_recall_and_expire() {
   pass "$name"
 }
 
-# AC-3 (store down): no recall text leaks when the store is unreachable.
+# (store down): no recall text leaks when the store is unreachable.
 case_store_down_no_recall() {
   local name="store-down-no-recall" out
   if [ ! -x "$SESSION_START" ]; then fail "$name" "hooks/session-start.sh not found or not executable"; return; fi
@@ -45,7 +45,7 @@ case_store_down_no_recall() {
   pass "$name"
 }
 
-# AC-4 Should_BlockVolumeRemoval_When_NameMatches: through the hook JSON on stdin.
+# Should_BlockVolumeRemoval_When_NameMatches: through the hook JSON on stdin.
 ptu() { jq -cn --arg c "$1" '{tool_input:{command:$c}}'; }
 
 case_guard() {
@@ -66,7 +66,7 @@ case_volume_prune() { case_guard "guard-volume-prune" "docker volume prune" 2; }
 case_system_prune_volumes() { case_guard "guard-system-prune-volumes" "docker system prune --volumes" 2; }
 case_docker_ps_allowed() { case_guard "guard-docker-ps-allowed" "docker ps" 0; }
 
-# AC-5 newest_dump_age_hours
+# newest_dump_age_hours
 case_dump_age_no_dump() {
   local name="dump-age-no-dump" dir out
   dir=$(mktemp -d)

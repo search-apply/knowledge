@@ -1,30 +1,12 @@
 {
   "mcpServers": {
     "knowledge": {
-      "command": "docker",
-      "args": [
-        "run", "-i", "--rm",
-        "--network", "${KNOWLEDGE_NETWORK:-knowledge}",
-        "-e", "DATABASE_URI",
-        "crystaldba/postgres-mcp",
-        "--access-mode=unrestricted"
-      ],
-      "env": {
-        "DATABASE_URI": "postgresql://master:${KNOWLEDGE_MASTER_PASSWORD}@${KNOWLEDGE_CONTAINER:-knowledge}:5432/knowledge"
-      }
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/mcp",
+      "args": ["master"]
     },
     "knowledge-agent": {
-      "command": "docker",
-      "args": [
-        "run", "-i", "--rm",
-        "--network", "${KNOWLEDGE_NETWORK:-knowledge}",
-        "-e", "DATABASE_URI",
-        "crystaldba/postgres-mcp",
-        "--access-mode=unrestricted"
-      ],
-      "env": {
-        "DATABASE_URI": "postgresql://agent:${KNOWLEDGE_AGENT_PASSWORD}@${KNOWLEDGE_CONTAINER:-knowledge}:5432/knowledge"
-      }
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/mcp",
+      "args": ["agent"]
     }
   }
 }

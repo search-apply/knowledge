@@ -13,11 +13,15 @@ done
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CONTAINER="knowledge-test-$$"
+# A throwaway HOME for the hook runs: ensure_up (now called from the hooks) must never write the
+# real $HOME/.config/knowledge/env or $HOME/.knowledge during the suite.
+HOOK_HOME="$(mktemp -d)"
 
 cleanup() {
   if [ "$KEEP" -eq 0 ]; then
     docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
   fi
+  rm -rf "$HOOK_HOME"
 }
 trap cleanup EXIT INT TERM PIPE
 
@@ -101,7 +105,9 @@ done
 for hook in "$ROOT"/db/tests/hooks/*.sh; do
   [ -e "$hook" ] || continue
   [ -x "$hook" ] || continue
-  output="$(cd "$ROOT" && KNOWLEDGE_CONTAINER="$CONTAINER" "$hook" 2>&1)"
+  # KNOWLEDGE_AUTOUP=off keeps a hook's ensure_up from creating containers or the env file during
+  # the suite; ensure-up.sh and knowledge-up.sh re-enable and sandbox exactly what they exercise.
+  output="$(cd "$ROOT" && HOME="$HOOK_HOME" KNOWLEDGE_AUTOUP=off KNOWLEDGE_CONTAINER="$CONTAINER" "$hook" 2>&1)"
   if [ $? -eq 0 ]; then
     echo "PASS $hook"
     passed=$((passed + 1))

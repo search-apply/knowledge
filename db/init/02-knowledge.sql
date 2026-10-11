@@ -222,6 +222,8 @@ declare
   v_cap int;
   v_decision_days int;
   v_lesson_days int;
+  v_stale_days int;
+  v_stale_cnt int;
   v_lines text[] := array[]::text[];
   v_row record;
   v_cnt int;
@@ -230,6 +232,7 @@ begin
   v_cap := coalesce(knowledge.setting(project, 'recall.section_cap'), '10')::int;
   v_decision_days := coalesce(knowledge.setting(project, 'recall.decision_days'), '30')::int;
   v_lesson_days := coalesce(knowledge.setting(project, 'recall.lesson_days'), '14')::int;
+  v_stale_days := coalesce(knowledge.setting(project, 'recall.stale_days'), '30')::int;
 
   v_lines := v_lines || array[('# ' || project || ' recall ' || to_char(now(), 'YYYY-MM-DD'))];
 
@@ -309,8 +312,31 @@ begin
   end loop;
   if v_cnt = 0 then v_lines := v_lines || array['(none)']; end if;
 
+  -- a trailing nudge: how many state/environment rows have aged past recall.stale_days,
+  -- and the one call that lists them. Printed only when there are any, so a tended project
+  -- gains no line.
+  select count(*) into v_stale_cnt from knowledge.stale(project, v_stale_days);
+  if v_stale_cnt > 0 then
+    v_lines := v_lines || array[format(
+      '%s state/environment rows stale over %s days; list: select * from knowledge.stale(%L, %s)',
+      v_stale_cnt, v_stale_days, project, v_stale_days)];
+  end if;
+
   return array_to_string(v_lines, E'\n');
 end;
+$$;
+
+-- stale(project, days): current state and environment rows not put or superseded within days.
+-- A superseded row is not current (so it never shows); a re-put row carries a fresh created_at.
+create or replace function knowledge.stale(project text, days int)
+returns table (id bigint, kind text, key text, headline text, created_at timestamptz)
+language sql stable security invoker as $$
+  select c.id, c.kind, c.key, split_part(c.text, E'\n', 1) as headline, c.created_at
+  from knowledge.current c
+  where c.project = stale.project
+    and c.kind in ('state', 'environment')
+    and c.created_at < now() - make_interval(days => stale.days)
+  order by c.created_at;
 $$;
 
 create or replace function knowledge.export(project text, format text)
