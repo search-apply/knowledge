@@ -6,6 +6,38 @@ through SQL functions as the whole tool surface, in front of a generic Postgres 
 plugin brings its own container up, so after you install it you only tell your model to use it.
 Nothing ever leaves your machine.
 
+## What a session sees at start
+
+The plugin prints the project's memory when a session starts (and again after a compaction).
+This is the bundled `demo` project; your own project starts empty and fills as you work:
+
+```
+demo, recall of 2026-10-11
+
+State
+- runs: api and worker containers are up
+- release: the next release is in progress
+
+Decisions of the last 30 days
+- ui: front the store with a generic postgres mcp server
+- store: add a ds schema for agent datasets
+
+Lessons of the last 14 days
+- bash-wrap: a big command output must not sit in context
+
+Pointers
+- start: read the brief before touching the schema
+
+Datasets
+- demo_titles: 7 rows, seven sample title verdicts for the demo project
+
+Open
+- none
+```
+
+Each line is one stored row: its key, then its text. Old decisions and lessons age out of the
+recall but stay in the store, searchable.
+
 ## Requirements
 
 - Docker running (Docker Desktop on macOS, or the Docker engine on Linux).
@@ -110,10 +142,21 @@ one per dataset, registered so that `recall` and `ds.list` show it.
 `knowledge.config` holds the few knobs (recall windows, scratch retention and digest size, the
 dataset row cap and timeout), per project with a `*` default; the Environment section lists them.
 
-At the start of a session the plugin reads these tables and prints the project's recall: the
-state rows, the decisions of the last 30 days, the lessons of the last 14, the pointers, the
-datasets and the open items, one line each. Load `db/seed/demo.sql` and run
-`select knowledge.recall('demo')` to see it.
+### How an agent uses them
+
+- Session start: the hook prints `knowledge.recall('<project>')`, the block shown at the top.
+- Before work on an issue: `select * from knowledge.about('<project>', '#12')` - every row linked
+  to that issue and its parents; `knowledge.search('<project>', 'webhook cancel')` by words.
+- When something is decided or learned: `select knowledge.put('<project>', 'decision',
+  'billing-cancel', 'the subscription ends at cancel_at', '{"why": "...", "options": "...",
+  "who_ruled": "operator"}', issue => '#12')`. Same key again = the old row is superseded.
+- A long command output: the hook stores it and hands back a five-line digest with its id;
+  `select scratch.read(<id>)` or `scratch.grep(<id>, 'error')` reads the rest, never a rerun.
+- Rows of data from research: `create table ds.titles as ...`, then
+  `ds.register('<project>', 'titles', 'what it holds')`; others query it with
+  `ds.sql('<project>', 'select ... from ds.titles')` - read-only, capped, with a timeout.
+- `bin/index-headings <project> docs/*.md` makes a repo's markdown headings searchable as
+  `section` rows.
 
 ## How it works
 
