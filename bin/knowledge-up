@@ -54,7 +54,7 @@ up() {
     -e KNOWLEDGE_HOOK_PASSWORD \
     -v "${VOLUME}:/var/lib/postgresql" \
     -v "$ROOT/db/init:/docker-entrypoint-initdb.d:ro" \
-    "${port_args[@]}" \
+    ${port_args[@]+"${port_args[@]}"} \
     postgres:18 >/dev/null
   echo "knowledge-up: started $CONTAINER"
 }
