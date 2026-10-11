@@ -320,8 +320,8 @@ file.
 
 ## Troubleshooting
 
-- Docker is not running: the session prints `docker is not available; the store is skipped this
-  session` and goes on without the store. Start Docker and open a new session.
+- Docker is not running: the session prints one line saying docker is not available and the store
+  is skipped, then goes on without it. Start Docker and open a new session.
 - The store is still coming up: the very first start runs `initdb`, which takes a few seconds. The
   session says so and uses the store from the next command on. `bin/knowledge-up --status` shows
   the progress.
@@ -366,7 +366,7 @@ docker exec -i knowledge-try psql -U agent -d knowledge -qAt -c "select knowledg
 docker rm -f knowledge-try
 ```
 
-A SQL test file is a sequence of `do $$ ... end $$;` blocks with asserts. Each block has a
+A SQL test file is a sequence of `do $$ ... end $$` blocks with asserts. Each block has a
 `-- break:` comment above it naming what a failing assert means. A hook test feeds the hook its
 real input and reads the result back through `docker exec psql`. See `db/tests/hooks/scratch.sh`
 and `db/tests/hooks/ensure-up.sh` for the shape.
