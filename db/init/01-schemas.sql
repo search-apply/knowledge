@@ -1,5 +1,4 @@
--- 01-schemas.sql: the two stores.
+-- 01-schemas.sql: the one store.
 create schema if not exists knowledge;
-create schema if not exists ds;
 
-grant usage on schema knowledge to master, agent;
+grant usage, create on schema knowledge to master, agent;

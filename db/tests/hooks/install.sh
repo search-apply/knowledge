@@ -21,7 +21,7 @@ fail() { printf 'FAIL %s: %s\n' "$1" "$2"; fails=$((fails + 1)); }
 case_session_start_prints_nothing_when_up() {
   local name="session-start-prints-nothing-when-up" out rc
   if [ ! -x "$SESSION_START" ]; then fail "$name" "hooks/session-start.sh not found or not executable"; return; fi
-  out=$(KNOWLEDGE_DUMP_DIR="$(mktemp -d)" "$SESSION_START" 2>&1); rc=$?
+  out=$(KNOWLEDGE_DUMP_DIR="$(mktemp -d)" "$SESSION_START" 2>&1 < /dev/null); rc=$?
   if [ -n "$out" ]; then fail "$name" "expected no output when the store is up, got: $out"; return; fi
   if [ "$rc" -ne 0 ]; then fail "$name" "exit $rc, want 0"; return; fi
   pass "$name"
@@ -31,10 +31,34 @@ case_session_start_prints_nothing_when_up() {
 case_store_down_one_line() {
   local name="store-down-one-line" out rc
   if [ ! -x "$SESSION_START" ]; then fail "$name" "hooks/session-start.sh not found or not executable"; return; fi
-  out=$(KNOWLEDGE_CONTAINER=knowledge-missing "$SESSION_START" 2>&1); rc=$?
+  out=$(KNOWLEDGE_CONTAINER=knowledge-missing "$SESSION_START" 2>&1 < /dev/null); rc=$?
   if [ -n "$out" ] && [ "$(printf '%s' "$out" | wc -l)" -gt 0 ] && [ "$out" != "knowledge: store is still coming up; it will be used from the next command on" ]; then
     fail "$name" "unexpected output: $out"; return
   fi
+  if [ "$rc" -ne 0 ]; then fail "$name" "exit $rc, want 0"; return; fi
+  pass "$name"
+}
+
+# Should_RecordSessionAndPrintOneLine_When_SessionIdOnStdin
+case_session_start_records_session() {
+  local name="session-start-records-session" out rc want
+  if [ ! -x "$SESSION_START" ]; then fail "$name" "hooks/session-start.sh not found or not executable"; return; fi
+  want="knowledge: session test-session-1, project hooktest. Read the state and the next steps first: select kind, key, text from knowledge.current where project = 'hooktest' and kind in ('state', 'next')"
+  out=$(printf '%s' '{"session_id":"test-session-1","source":"startup"}' | KNOWLEDGE_PROJECT=hooktest "$SESSION_START" 2>&1); rc=$?
+  if [ "$rc" -ne 0 ]; then fail "$name" "exit $rc, want 0"; return; fi
+  if [ "$out" != "$want" ]; then fail "$name" "got: $out"; return; fi
+  if [ "$(docker exec "$KNOWLEDGE_CONTAINER" psql -U postgres -d knowledge -qAt -c "select count(*) from knowledge.sessions where id = 'test-session-1' and project = 'hooktest'")" != "1" ]; then
+    fail "$name" "no sessions row for test-session-1/hooktest"; return
+  fi
+  pass "$name"
+}
+
+# (empty stdin): prints nothing and exits 0.
+case_empty_stdin_prints_nothing() {
+  local name="empty-stdin-prints-nothing" out rc
+  if [ ! -x "$SESSION_START" ]; then fail "$name" "hooks/session-start.sh not found or not executable"; return; fi
+  out=$("$SESSION_START" 2>&1 < /dev/null); rc=$?
+  if [ -n "$out" ]; then fail "$name" "expected no output on empty stdin, got: $out"; return; fi
   if [ "$rc" -ne 0 ]; then fail "$name" "exit $rc, want 0"; return; fi
   pass "$name"
 }
@@ -85,6 +109,8 @@ case_dump_age_with_dump() {
 
 case_session_start_prints_nothing_when_up
 case_store_down_one_line
+case_session_start_records_session
+case_empty_stdin_prints_nothing
 case_volume_rm
 case_rm_dash_v
 case_volume_prune
