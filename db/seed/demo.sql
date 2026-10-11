@@ -2,37 +2,36 @@
 -- init, never by the test runner:
 --   docker exec -i <container> psql -U postgres -d knowledge < db/seed/demo.sql
 
-select knowledge.put('demo', 'state', 'runs', 'api and worker containers are up', '{"value":"up"}'::jsonb);
-select knowledge.put('demo', 'state', 'release', 'the next release is in progress', '{"value":"in-progress"}'::jsonb);
+insert into knowledge.projects (name) values ('demo');
 
-select knowledge.put('demo', 'decision', 'store', 'keep one postgres with three schemas', '{"why":"fewer moving parts","options":"one postgres, sqlite plus files","who_ruled":"master"}'::jsonb);
-select knowledge.put('demo', 'decision', 'store', 'add a ds schema for agent datasets', '{"why":"agents need real tables, not files","options":"a ds schema, flat files","who_ruled":"master"}'::jsonb);
-select knowledge.put('demo', 'decision', 'ui', 'front the store with a generic postgres mcp server', '{"why":"no server of our own to maintain","options":"a custom server, a generic mcp server","who_ruled":"master"}'::jsonb);
+insert into knowledge.sessions (id, project, started_at, ended_at, summary) values
+  ('3f2a', 'demo', '2026-10-10 09:12', '2026-10-10 11:40', 'Built the cancel flow for #41, tests green, merged.'),
+  ('9c1e', 'demo', '2026-10-11 08:00', null, null);
 
-select knowledge.put('demo', 'lesson', 'bash-wrap', 'a big command output must not sit in context', '{"incident":"a session held a huge log in context and stalled","rule":"store the output, hand back a digest"}'::jsonb);
+insert into knowledge.tasks (project, ref, title, url, status) values
+  ('demo', '#41', 'Cancel at period end', 'https://github.com/acme/demo/issues/41', 'done'),
+  ('demo', '#42', 'Webhook replay', 'https://github.com/acme/demo/issues/42', 'open');
 
-select knowledge.put('demo', 'pointer', 'start', 'read the brief before touching the schema', '{"path":"docs/brief.md","what":"what we build and why"}'::jsonb, tags := array['start']);
+insert into knowledge.notes (project, kind, key, text, ref, session) values
+  ('demo', 'decision', 'billing-cancel', 'Cancel at the period end, never at the webhook time. Operator ruling.', '#41', '3f2a'),
+  ('demo', 'lesson', 'stripe-webhook', 'A scheduled cancel arrives as an update with cancel_at set, not as a delete.', '#41', '3f2a'),
+  ('demo', 'summary', 'task-41', 'Cancel flow built and merged. Two tests cover the scheduled cancel.', '#41', '3f2a'),
+  ('demo', 'state', 'release', '0.4.0 on the release branch, tests green, not merged.', null, '9c1e'),
+  ('demo', 'next', 'release', 'Merge 0.4.0 on the user''s word, then tag.', null, '9c1e');
 
-select knowledge.put('demo', 'finding', 'schema-ready', 'the knowledge tables and functions pass their tests', '{"task":"T-12","hop":"functions","role":"backend-engineer"}'::jsonb);
-
-select knowledge.put('demo', 'term', 'current', 'the latest row of every key, the view a session reads at the start', '{"definition":"the view knowledge.current: the newest row per project, kind and key"}'::jsonb);
-
-set role agent;
-
-create table ds.demo_titles (
-  id int,
+create table knowledge.demo_titles (
   title text,
   verdict text,
   created_at timestamptz default now()
 );
-comment on table ds.demo_titles is 'seven sample title verdicts for the demo project';
-insert into ds.demo_titles (id, title, verdict) values
-  (1, 'senior backend engineer', 'good fit'),
-  (2, 'junior frontend developer', 'maybe'),
-  (3, 'staff data engineer', 'good fit'),
-  (4, 'product manager', 'skip'),
-  (5, 'devops engineer', 'maybe'),
-  (6, 'qa automation engineer', 'good fit'),
-  (7, 'engineering manager', 'skip');
+insert into knowledge.demo_titles (title, verdict) values
+  ('senior backend engineer', 'good fit'),
+  ('junior frontend developer', 'maybe'),
+  ('staff data engineer', 'good fit'),
+  ('product manager', 'skip'),
+  ('devops engineer', 'maybe'),
+  ('qa automation engineer', 'good fit'),
+  ('engineering manager', 'skip');
 
-reset role;
+insert into knowledge.datasets (table_name, project, ref, session, what) values
+  ('demo_titles', 'demo', '#42', '9c1e', 'Seven job titles with the verdict the parser gave each');

@@ -2,13 +2,14 @@
 
 A memory for coding agents: one Postgres container on your machine, a standard Postgres MCP
 server in front of it, and two short skills that teach the model how to store what it learns and
-how to query it back. Shipped as a Claude Code plugin. The plugin starts its own container, so
+how to find it again. Shipped as a Claude Code plugin. The plugin starts its own container, so
 after installing it you only tell your model to use it. Nothing leaves your machine.
 
 ## What a session says at start
 
-When a session starts, the plugin makes sure the store is up. The model then looks at what is
-stored for the project and tells you in one sentence. On a new project:
+When a session starts, the plugin makes sure the store is up, records the session, and gives the
+model one line with the session id and the project name. The model then looks at what is stored
+for the project and tells you in one sentence. On a new project:
 
 ```
 The knowledge store is up. I will keep structured notes here on what we work on.
@@ -21,7 +22,7 @@ The knowledge store is up, with 14 notes on this project. The latest: the subscr
 Stripe's cancel_at, never at the webhook time.
 ```
 
-Nothing is printed by the plugin itself. The model reads the store and speaks.
+The line the plugin prints is for the model. The model reads the store and speaks.
 
 ## Requirements
 
@@ -63,80 +64,112 @@ starts nothing. It only tells the model to lean on the store that is already the
 
 ## What is in the database
 
-Two schemas. `knowledge` holds the default tables, created once when the container is made.
-`ds` is empty and belongs to the model, for any table it wants to create while working.
+One schema, `knowledge`. Six default tables and one view, created once when the container is
+made. The model's own tables live in the same schema, next to them.
 
 ### The default tables
 
-`knowledge.rows` holds the memory, one row per item. Writing the same project, kind and key again
-adds a new row and marks the old one as superseded, so history stays and the view
-`knowledge.current` shows the latest. The text is at most three lines. The fields column carries
-what the kind requires. Rows of the bundled `demo` project:
-
-| id | kind | key | text | fields | superseded_by |
-|---|---|---|---|---|---|
-| 1 | state | runs | api and worker containers are up | {"value": "up"} | |
-| 3 | decision | store | keep one postgres with three schemas | {"why": "fewer moving parts", "options": "one postgres, sqlite plus files", "who_ruled": "master"} | 4 |
-| 4 | decision | store | add a ds schema for agent datasets | {"why": "agents need real tables, not files", "options": "a ds schema, flat files", "who_ruled": "master"} | |
-| 6 | lesson | bash-wrap | a big command output must not sit in context | {"incident": "a session held a huge log in context and stalled", "rule": "store the output, hand back a digest"} | |
-| 7 | pointer | start | read the brief before touching the schema | {"path": "docs/brief.md", "what": "what we build and why"} | |
-
-The other columns are `project`, `issue` and `commit` (where the row came from), `source`, `who`,
-`tags` and `created_at`.
-
-`knowledge.kinds` is the vocabulary: a name, a description and the fields a row of that kind must
-carry. Ten kinds are built in. One insert adds another.
-
-| kind | fields | use it for |
+| table | one row is | key |
 |---|---|---|
-| decision | why, options, who_ruled | a ruling and why it was made |
-| fact | verified_on, how | a verified fact |
-| state | value | what is running, what is in progress |
-| pointer | path, what | a place worth reading |
-| lesson | incident, rule | what an incident taught |
-| finding | task, hop, role | a finding from one piece of work |
-| incident | date, what, cause, fix | an incident record |
-| environment | name, value | a fact about the running environment |
-| recipe | steps, pointer | how to do something |
-| term | definition | a defined term |
+| `projects` | a project, by default the working directory's name | name |
+| `sessions` | one Claude Code session, with when it started and ended and a summary | id, the session id |
+| `tasks` | a unit of work: a ticket, a page, a file | project and ref |
+| `notes` | one thing worth keeping, of one kind, under one key, at most 2000 characters | id |
+| `kinds` | the vocabulary for notes | name |
+| `datasets` | a table the model made, with what it holds | table_name |
 
-One function, `knowledge.put`, writes a row: it checks the kind's fields, inserts the row and marks
-the previous row of that key as superseded. One function, `knowledge.search`, finds rows by words.
-Everything else is a plain query, and the skill carries the ones that matter.
+The view `knowledge.current` shows the newest note per project, kind and key. Notes are never
+updated or deleted. A new note under the same key is the new truth and the view shows it. The old
+notes stay as history.
+
+Every note can point at a task (`ref`) and at the session that wrote it (`session`). A task's
+`ref` is whatever names it where you track work: `#41` for a GitHub issue, `PROJ-42` for Jira,
+`docs/plan.md` for a file, or a URL. That is how a question like "what did we decide on the
+billing task last month" becomes one join.
+
+Rows of the bundled `demo` project. The tasks:
+
+| project | ref | title | url | status |
+|---|---|---|---|---|
+| demo | #41 | Cancel at period end | https://github.com/acme/demo/issues/41 | done |
+| demo | #42 | Webhook replay | https://github.com/acme/demo/issues/42 | open |
+
+The notes:
+
+| kind | key | text | ref | session |
+|---|---|---|---|---|
+| decision | billing-cancel | Cancel at the period end, never at the webhook time. Operator ruling. | #41 | 3f2a |
+| lesson | stripe-webhook | A scheduled cancel arrives as an update with cancel_at set, not as a delete. | #41 | 3f2a |
+| summary | task-41 | Cancel flow built and merged. Two tests cover the scheduled cancel. | #41 | 3f2a |
+| state | release | 0.4.0 on the release branch, tests green, not merged. | | 9c1e |
+| next | release | Merge 0.4.0 on the user's word, then tag. | | 9c1e |
+
+The sessions:
+
+| id | project | started_at | ended_at | summary |
+|---|---|---|---|---|
+| 3f2a | demo | 2026-10-10 09:12 | 2026-10-10 11:40 | Built the cancel flow for #41, tests green, merged. |
+| 9c1e | demo | 2026-10-11 08:00 | | |
+
+The datasets:
+
+| table_name | project | ref | session | what |
+|---|---|---|---|---|
+| demo_titles | demo | #42 | 9c1e | Seven job titles with the verdict the parser gave each |
+
+The kinds are the vocabulary: `decision`, `fact`, `state`, `lesson`, `pointer`, `incident`,
+`recipe`, `term`, `next` and `summary`, each with one line saying what it is for. One insert
+adds another.
+
+### How the model uses them
+
+- At the start it reads the `state` and `next` notes and says the sentence above.
+- A task starts: one row in `tasks`.
+- Something is decided, learned, changed or found: one row in `notes`, with the task ref and the
+  session id.
+- Rows of data a piece of work produces, like a scraped list or a benchmark: a table of its own,
+  `knowledge.<project>_<topic>`, plus one row in `datasets` saying what it holds.
+- At the end, and before the context is compacted: a `state` note, a `next` note and the session's
+  summary. After a compaction the plugin prints the same line again, the model reads the state and
+  next notes and goes on. There is no handoff file to write.
 
 ### The queries the model uses
 
-- At session start: `select kind, key, text, created_at from knowledge.current where project = '<project>' order by created_at desc limit 30`
-- When something is decided or learned: `select knowledge.put('<project>', 'decision', 'billing-cancel', 'the subscription ends at cancel_at', '{"why": "...", "options": "...", "who_ruled": "operator"}', issue => '#12')`
-- By words: `select * from knowledge.search('<project>', 'webhook cancel')`
-- By kind or by issue: `select key, text from knowledge.current where project = '<project>' and kind = 'decision'`,
-  `... and issue = '#12'`
-- The history of a key: `select text, created_at from knowledge.rows where project = '<project>' and key = 'billing-cancel' order by created_at`
+- At the start: `select kind, key, text from knowledge.current where project = '<project>' and kind in ('state', 'next')`
+- A task starts: `insert into knowledge.tasks (project, ref, title, url, status) values ('<project>', '#41', 'Cancel at period end', 'https://...', 'open')`
+- Something is decided: `insert into knowledge.notes (project, kind, key, text, ref, session) values ('<project>', 'decision', 'billing-cancel', 'Cancel at the period end.', '#41', '<session>')`
+- Everything about a task: `select kind, key, text, created_at from knowledge.notes where project = '<project>' and ref = '#41' order by created_at`
+- By words: `select kind, key, text from knowledge.current where project = '<project>' and to_tsvector('simple', key || ' ' || text) @@ websearch_to_tsquery('simple', 'cancel webhook')`
+- What a session did: `select s.summary, n.kind, n.key from knowledge.sessions s left join knowledge.notes n on n.session = s.id where s.id = '<session>'`
+- The last month per task: the tasks of the last 30 days joined to their notes, with a count and
+  the first and last note time. The `knowledge` skill carries it and the rest.
 
 ### The model's own tables
 
-The `ds` schema is where the model keeps rows of data a piece of work produces, like research
-results or measurements, instead of pasting them into the context. There are no fixed scripts for
-it, only a shape, so the tables line up and the next session can find them:
+The model keeps rows of data a piece of work produces, like research results or measurements, in
+tables of its own in the same schema, instead of pasting them into the context. There are no fixed
+scripts for them, only a shape, so the tables line up and the next session can find them:
 
-- the name is `ds.<project>_<topic>`
-- every table has a `created_at` column and a `comment on table` saying what it holds and where it
-  came from
+- the name is `knowledge.<project>_<topic>`
+- every table has a `created_at` column and one row in `knowledge.datasets` saying what it holds,
+  which task it belongs to and which session made it
 - every read has a `limit`, and a reply carries table names and counts, never the rows
-- the map of what exists is one query over `pg_class` and `obj_description`, in the `data` skill
 
-The `agent` role has a five-second statement timeout, so a runaway query from a subagent stops.
+Both roles may create such tables. The `agent` role has a five-second statement timeout, so a
+runaway query from a subagent stops.
 
 ## How it works
 
 - One container, `postgres:18`, on a private docker network, with a named volume for the data.
 - Two MCP entries: `knowledge` (read and write) for the main session, and `knowledge-agent` (read
-  only on `knowledge`, read and write on `ds`) for spawned subagents. Both run the standard
-  `crystaldba/postgres-mcp` image. The model talks to the database with its `execute_sql` tool.
-- Two skills: `knowledge` (the default tables, when to store what, the queries) and `data` (the
-  shape of the model's own tables).
-- Two hooks: at session start the store is brought up and a dump is taken once a day. Before any
-  Bash command, a guard refuses the docker commands that would remove the volume.
+  only on the default tables, may create tables of its own) for spawned subagents. Both run the
+  standard `crystaldba/postgres-mcp` image. The model talks to the database with its `execute_sql`
+  tool.
+- Two skills: `knowledge` (the tables, when to store what, the queries) and `data` (the shape of
+  the model's own tables).
+- Two hooks. At session start the store is brought up, the project and the session are recorded,
+  the model gets one line with the session id and the project name, and a dump is taken once a
+  day. Before any Bash command, a guard refuses the docker commands that would remove the volume.
 - Nothing is sent anywhere. There is no telemetry and no network traffic from the plugin beyond
   pulling the two docker images.
 
@@ -144,9 +177,11 @@ The `agent` role has a five-second statement timeout, so a runaway query from a 
 
 | role | grants | used by |
 |---|---|---|
-| `postgres` | superuser, owns the schemas | `knowledge-up` only, for dump and restore |
-| `master` | all on `knowledge` and `ds` | the main session's MCP entry (`knowledge`) |
-| `agent` | read `knowledge`, all on `ds`, five-second statement timeout | a subagent's MCP entry (`knowledge-agent`) |
+| `postgres` | superuser, owns the schema | `knowledge-up` only, for dump and restore |
+| `master` | all on the `knowledge` schema | the main session's MCP entry (`knowledge`) |
+| `agent` | read the default tables, create tables of its own, five-second statement timeout | a subagent's MCP entry (`knowledge-agent`) |
+
+A table made by one role is readable by the other.
 
 The passwords live only in `$HOME/.config/knowledge/env`, readable only by you, generated on the
 first start and never written into any config file. The MCP wrapper `bin/mcp` reads them and builds
@@ -187,7 +222,8 @@ to the docker network reaches the container through a published port: set `KNOWL
 `postgresql://agent:<AGENT_PASSWORD>@localhost:$KNOWLEDGE_PORT/knowledge`.
 
 A client that cannot load the plugin's skills can be given the two skill files as plain text. They
-are in `skills/knowledge/SKILL.md` and `skills/data/SKILL.md`.
+are in `skills/knowledge/SKILL.md` and `skills/data/SKILL.md`. Such a client does not get the
+session line from the hook, so it writes notes without a session id.
 
 Subagents, from this plugin or any other, should get only the `knowledge-agent` entry, never the
 writable one. Its tools appear under the prefix `mcp__plugin_knowledge_knowledge-agent__`. The
@@ -196,16 +232,25 @@ subagent only the first, so that only the main session writes memory.
 
 ## Team use
 
-The store is per machine. To share a project's memory, export its current rows to a file, commit
-the file, and load it on the other machine:
+The store is per machine. To move all of it, take a dump here and restore it there (see below).
+To share one project, copy its sessions, tasks and notes to files, commit them, and load them on
+the other machine in that order. The project row comes first:
 
 ```
-docker exec -i knowledge psql -U master -d knowledge -c "\copy (select project, kind, key, text, fields, issue, commit, source, who, tags, created_at from knowledge.current where project = '<project>' order by created_at) to stdout csv header" > knowledge-<project>.csv
+P=knowledge; Q="docker exec -i knowledge psql -U master -d knowledge -c"
+$Q "\copy (select * from knowledge.sessions where project = '<project>' order by started_at) to stdout csv header" > sessions.csv
+$Q "\copy (select * from knowledge.tasks where project = '<project>' order by created_at) to stdout csv header" > tasks.csv
+$Q "\copy (select project, kind, key, text, ref, session, created_at from knowledge.notes where project = '<project>' order by created_at) to stdout csv header" > notes.csv
 
-docker exec -i knowledge psql -U master -d knowledge -c "\copy knowledge.rows (project, kind, key, text, fields, issue, commit, source, who, tags, created_at) from stdin csv header" < knowledge-<project>.csv
+$Q "insert into knowledge.projects (name) values ('<project>') on conflict do nothing"
+$Q "\copy knowledge.sessions from stdin csv header" < sessions.csv
+$Q "\copy knowledge.tasks from stdin csv header" < tasks.csv
+$Q "\copy knowledge.notes (project, kind, key, text, ref, session, created_at) from stdin csv header" < notes.csv
 ```
 
-Loading the same file twice is refused by the unique key on project, kind, key and created_at.
+Loading the same notes file twice is refused by the unique key on project, kind, key and
+created_at. The model's own tables are not part of this. Dump them separately if a teammate needs
+them.
 
 ## Backup, restore, uninstall
 
@@ -258,7 +303,7 @@ docker run -d --name knowledge-try \
   -e KNOWLEDGE_MASTER_PASSWORD=x -e KNOWLEDGE_AGENT_PASSWORD=x \
   -v "$PWD/db/init:/docker-entrypoint-initdb.d:ro" postgres:18
 docker exec -i knowledge-try psql -U postgres -d knowledge < db/seed/demo.sql
-docker exec -i knowledge-try psql -U agent -d knowledge -c "select kind, key, text from knowledge.current where project = 'demo'"
+docker exec -i knowledge-try psql -U agent -d knowledge -c "select kind, key, text, ref from knowledge.current where project = 'demo'"
 docker rm -f knowledge-try
 ```
 

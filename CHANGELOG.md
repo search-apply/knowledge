@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0 - unreleased
+
+- The default tables are now six plain tables in one schema: `projects`, `sessions`, `tasks`, `notes`, `kinds`, `datasets`, plus the view `current`. Notes are append-only and point at a task (`ref`) and at the session that wrote them. Everything a session keeps goes here: decisions, lessons, state, next steps, session summaries.
+- The session-start hook records the project and the session and gives the model one line with the session id and the project name, at start and after a compaction. The model reads the `state` and `next` notes and goes on. No handoff file.
+- The model's own tables live in the `knowledge` schema too, each registered with one `datasets` row. The `ds` schema is gone.
+- Removed: `knowledge.rows` with its `fields`, `tags`, `commit`, `source`, `who`, `issue` and `superseded_by` columns, `knowledge.put`, `knowledge.search`, the `finding` and `environment` kinds. Added kinds: `next`, `summary`.
+- Both skills rewritten around the tables, the flow of a session and the queries.
+
 ## 0.2.0 - unreleased
 
 - The plugin is now a Postgres MCP server plus two skills. The default tables (`knowledge.rows`, `knowledge.kinds`, the view `knowledge.current`), one write function (`knowledge.put`) and one search function stay. The `ds` schema is free for the model's own tables, with a shape described in the `data` skill.

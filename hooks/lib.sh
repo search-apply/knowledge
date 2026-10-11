@@ -46,7 +46,7 @@ knowledge_root() {
 }
 
 # load_env: source $HOME/.config/knowledge/env when it exists and the passwords are not already
-# in the environment. An explicit `export POSTGRES_PASSWORD=...` always wins over the file.
+# set. An explicit `export POSTGRES_PASSWORD=...` always wins over the file.
 load_env() {
   local envfile="$HOME/.config/knowledge/env"
   if [ -f "$envfile" ] && [ -z "${POSTGRES_PASSWORD:-}" ]; then

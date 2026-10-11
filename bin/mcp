@@ -2,8 +2,8 @@
 # mcp <master|agent>: the command .mcp.json runs for each knowledge MCP server. Sources the env,
 # brings the store up (a longer bounded wait, since it is about to connect), then execs the same
 # docker run of the Postgres MCP server .mcp.json used to run inline -- but the DATABASE_URI, with
-# its password, is built here from the env and passed only as a process environment variable, so
-# no config file ever holds the password.
+# its password, is built here from the env and passed only as a process variable, so no config
+# file ever holds the password.
 # The database is unreachable only during a first-ever cold start; the MCP server is started by the
 # client and will surface as failed until the store finishes coming up (a later /mcp reconnect, or
 # the next session, attaches it). See the README troubleshooting section.
