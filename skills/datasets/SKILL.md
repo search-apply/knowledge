@@ -12,12 +12,12 @@ Plain tables an agent writes and keeps while useful. Any role creates tables in 
 - Make a table: `create table ds.postings (id bigint, title text, company text);`
 - Insert in batches, not row by row: `insert into ds.postings values (...), (...);`
 - Load a file through the container (no psql on the host): `docker exec -i <container> psql -U agent -d knowledge -c '\copy ds.postings from stdin csv header' < postings.csv`
-- Register the table so others find it: `select ds.register('t1-ds', 'postings', 'open roles pulled 2026-10-10');`
+- Register the table so others find it: `select ds.register('<project>', 'postings', 'open roles pulled 2026-10-10');`
 
 ## Reading
-- List the catalog: `select * from ds.list('t1-ds');`
+- List the catalog: `select * from ds.list('<project>');`
 - Describe before you query, to learn the columns: `select * from ds.describe('postings');`
-- Run one read-only statement with a timeout and a row cap: `select * from ds.sql('t1-ds', 'select company, count(*) from ds.postings group by 1');` a result past the cap is saved as `ds.result_<n>`.
+- Run one read-only statement with a timeout and a row cap: `select * from ds.sql('<project>', 'select company, count(*) from ds.postings group by 1');` a result past the cap is saved as `ds.result_<n>`.
 - A raw select outside `ds.sql` carries its own `LIMIT`; never read a table whole.
 
 ## Updating
