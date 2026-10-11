@@ -70,12 +70,19 @@ knowledge_gen_secret() {
 # write $HOME/.config/knowledge/env (mode 600) with four random passwords, then source it. The file
 # is the only place the passwords ever live; no config file holds them. KNOWLEDGE_PROJECT is left
 # unset on purpose so the project defaults to the working directory's name.
+# Several of these can run at once (the SessionStart hook and both MCP wrappers, at session start).
+# A plain `[ ! -f ] then write` is check-then-act: two processes can both pass the check and both
+# write, each with its own random passwords. Make the write atomic instead -- build the content in
+# a temp file in the same directory, then `ln` it onto the real name; `ln` fails instead of
+# clobbering when the target already exists, so only the first writer's passwords ever land, and
+# every other process's generated-but-unused secrets are discarded with the temp file.
 knowledge_ensure_env_file() {
   local dir="$HOME/.config/knowledge" envfile="$HOME/.config/knowledge/env"
   if [ -z "${POSTGRES_PASSWORD:-}" ] && [ ! -f "$envfile" ]; then
     (
       umask 077
       mkdir -p "$dir"
+      tmp="$(mktemp "$dir/.env.XXXXXX")"
       {
         printf '# knowledge store credentials, generated %s. Mode 600; never commit this file.\n' "$(date +%Y-%m-%d)"
         printf 'POSTGRES_PASSWORD=%s\n' "$(knowledge_gen_secret)"
@@ -83,9 +90,12 @@ knowledge_ensure_env_file() {
         printf 'KNOWLEDGE_AGENT_PASSWORD=%s\n' "$(knowledge_gen_secret)"
         printf 'KNOWLEDGE_HOOK_PASSWORD=%s\n' "$(knowledge_gen_secret)"
         printf '# KNOWLEDGE_PROJECT is intentionally left unset; the project defaults to the directory name.\n'
-      } > "$envfile"
+      } > "$tmp"
+      # Atomic create-if-absent: ln fails (EEXIST) when another process already won the race;
+      # either way the temp file's one use is over once the link attempt settles.
+      ln "$tmp" "$envfile" 2>/dev/null
+      rm -f "$tmp"
     )
-    chmod 600 "$envfile" 2>/dev/null || true
   fi
   load_env
 }
