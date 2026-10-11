@@ -67,7 +67,7 @@ knowledge_gen_secret() {
 }
 
 # knowledge_ensure_env_file: on the first run, when no password is exported and no file exists,
-# write $HOME/.config/knowledge/env (mode 600) with four random passwords, then source it. The file
+# write $HOME/.config/knowledge/env (mode 600) with three random passwords, then source it. The file
 # is the only place the passwords ever live; no config file holds them. KNOWLEDGE_PROJECT is left
 # unset on purpose so the project defaults to the working directory's name.
 # Several of these can run at once (the SessionStart hook and both MCP wrappers, at session start).
@@ -88,7 +88,6 @@ knowledge_ensure_env_file() {
         printf 'POSTGRES_PASSWORD=%s\n' "$(knowledge_gen_secret)"
         printf 'KNOWLEDGE_MASTER_PASSWORD=%s\n' "$(knowledge_gen_secret)"
         printf 'KNOWLEDGE_AGENT_PASSWORD=%s\n' "$(knowledge_gen_secret)"
-        printf 'KNOWLEDGE_HOOK_PASSWORD=%s\n' "$(knowledge_gen_secret)"
         printf '# KNOWLEDGE_PROJECT is intentionally left unset; the project defaults to the directory name.\n'
       } > "$tmp"
       # Atomic create-if-absent: ln fails (EEXIST) when another process already won the race;

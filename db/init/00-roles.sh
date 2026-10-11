@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# 00-roles.sh: create the login roles master, agent and hook.
+# 00-roles.sh: create the login roles master and agent.
 # Run by the postgres image's docker-entrypoint-initdb.d with the container env.
 set -euo pipefail
 
-for var in KNOWLEDGE_MASTER_PASSWORD KNOWLEDGE_AGENT_PASSWORD KNOWLEDGE_HOOK_PASSWORD; do
+for var in KNOWLEDGE_MASTER_PASSWORD KNOWLEDGE_AGENT_PASSWORD; do
   if [ -z "${!var:-}" ]; then
     echo "00-roles.sh: $var is unset" >&2
     exit 1
@@ -25,4 +25,3 @@ SQL
 
 create_role master "$KNOWLEDGE_MASTER_PASSWORD"
 create_role agent "$KNOWLEDGE_AGENT_PASSWORD"
-create_role hook "$KNOWLEDGE_HOOK_PASSWORD"

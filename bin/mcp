@@ -24,19 +24,12 @@ esac
 # About to connect: give a cold start up to 30s, but still fail open and exec regardless. On a
 # first-ever cold start, ensure_up is what writes the password file, so the password for the URI
 # below must be read AFTER this call returns, not before -- read it too early and it is empty.
-if KNOWLEDGE_WAIT_SECS="${KNOWLEDGE_WAIT_SECS:-30}" ensure_up; then store_state=up; else store_state=down; fi
+KNOWLEDGE_WAIT_SECS="${KNOWLEDGE_WAIT_SECS:-30}" ensure_up || true
 
 case "$role" in
   master) pw="${KNOWLEDGE_MASTER_PASSWORD:-}" ;;
   agent)  pw="${KNOWLEDGE_AGENT_PASSWORD:-}" ;;
 esac
-
-if [ "${KNOWLEDGE_MCP_DRY_RUN:-0}" = "1" ]; then
-  pwset=no
-  [ -n "$pw" ] && pwset=yes
-  echo "mcp: role $role, password set: $pwset, store: $store_state"
-  exit 0
-fi
 
 container="$(knowledge_container)"
 network="${KNOWLEDGE_NETWORK:-knowledge}"

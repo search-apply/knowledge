@@ -17,23 +17,13 @@ fails=0
 pass() { printf 'PASS %s\n' "$1"; }
 fail() { printf 'FAIL %s: %s\n' "$1" "$2"; fails=$((fails + 1)); }
 
-master_q() { docker exec -i "$KNOWLEDGE_CONTAINER" psql -U master -d knowledge -v ON_ERROR_STOP=1 -qAt -c "$1"; }
-
-# Should_ExpireAndDump_When_SessionStartsAndStoreUp
+# Should_PrintNothingAndExitZero_When_SessionStartsAndStoreUp
 case_session_start_prints_nothing_when_up() {
-  local name="session-start-prints-nothing-when-up" out rc sess="t6-exp-$$" remaining
+  local name="session-start-prints-nothing-when-up" out rc
   if [ ! -x "$SESSION_START" ]; then fail "$name" "hooks/session-start.sh not found or not executable"; return; fi
-  # seed an already-expired scratch row so a real expire() call removes it: a negative
-  # per-project retention makes scratch.put's own expires_at land in the past.
-  master_q "insert into knowledge.config (project, name, value) values ('installtest','scratch.retention_days','-36500')" >/dev/null
-  master_q "select scratch.put('installtest','$sess','noop','x')" >/dev/null
-
   out=$(KNOWLEDGE_DUMP_DIR="$(mktemp -d)" "$SESSION_START" 2>&1); rc=$?
   if [ -n "$out" ]; then fail "$name" "expected no output when the store is up, got: $out"; return; fi
   if [ "$rc" -ne 0 ]; then fail "$name" "exit $rc, want 0"; return; fi
-
-  remaining=$(master_q "select count(*) from scratch.outputs where session = '$sess'" || true)
-  if [ "$remaining" != "0" ]; then fail "$name" "expired row for session $sess still present after session-start (count=$remaining)"; return; fi
   pass "$name"
 }
 

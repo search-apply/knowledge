@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ensure-up.sh: the hook tests for hooks/lib.sh's ensure_up and the SessionStart hook's fail-open.
 # Proves five things, all on throwaways named for this process:
-#   1. a missing env file is created, mode 600, with four password lines and no port;
+#   1. a missing env file is created, mode 600, with three password lines and no port;
 #   2. a stopped container is started by ensure_up;
 #   3. with docker off the PATH the SessionStart hook prints one line and exits 0;
 #   4. bin/mcp on a fresh HOME reads the password AFTER ensure_up writes it, not before;
@@ -43,7 +43,7 @@ container_is_running() { [ "$(docker inspect -f '{{.State.Running}}' "$KNOWLEDGE
 # pre-create the throwaway container directly (passwords live only in this subshell), wait ready.
 precreate_container() {
   (
-    export POSTGRES_PASSWORD=zs KNOWLEDGE_MASTER_PASSWORD=zs KNOWLEDGE_AGENT_PASSWORD=zs KNOWLEDGE_HOOK_PASSWORD=zs
+    export POSTGRES_PASSWORD=zs KNOWLEDGE_MASTER_PASSWORD=zs KNOWLEDGE_AGENT_PASSWORD=zs
     "$ROOT/bin/knowledge-up" >/dev/null 2>&1
   ) || return 1
   local i
@@ -54,19 +54,19 @@ precreate_container() {
   return 1
 }
 
-# 1: missing env -> created mode 600, four password lines, no port, no password printed here.
+# 1: missing env -> created mode 600, three password lines, no port, no password printed here.
 case_env_created() {
   local name="missing-env-created-600" envfile="$TMP_ENV/.config/knowledge/env" perm eqs
   (
     export HOME="$TMP_ENV" KNOWLEDGE_AUTOUP=on KNOWLEDGE_WAIT_SECS=3
-    unset POSTGRES_PASSWORD KNOWLEDGE_MASTER_PASSWORD KNOWLEDGE_AGENT_PASSWORD KNOWLEDGE_HOOK_PASSWORD
+    unset POSTGRES_PASSWORD KNOWLEDGE_MASTER_PASSWORD KNOWLEDGE_AGENT_PASSWORD
     ensure_up >/dev/null 2>&1 || true
   )
   if [ ! -f "$envfile" ]; then fail "$name" "ensure_up did not create $envfile"; return; fi
   perm="$(perms_of "$envfile")"
   if [ "$perm" != "600" ]; then fail "$name" "env file mode is $perm, want 600"; return; fi
   eqs="$(grep -c '=' "$envfile")"
-  if [ "$eqs" -ne 4 ]; then fail "$name" "env file has $eqs KEY=value lines, want 4 (the four passwords)"; return; fi
+  if [ "$eqs" -ne 3 ]; then fail "$name" "env file has $eqs KEY=value lines, want 3 (the three passwords)"; return; fi
   if grep -q 'KNOWLEDGE_PORT' "$envfile"; then fail "$name" "env file set KNOWLEDGE_PORT; it must stay unset"; return; fi
   # prove the passwords are substantial without printing them
   if ! awk -F= '/_PASSWORD=/ { if (length($2) < 20) bad = 1 } END { exit bad + 0 }' "$envfile"; then
@@ -98,7 +98,7 @@ case_network_name_collision() {
     || { fail "$name" "could not create the colliding network"; return; }
   (
     export HOME="$TMP_ENV" KNOWLEDGE_AUTOUP=on KNOWLEDGE_WAIT_SECS=30
-    export POSTGRES_PASSWORD=zs KNOWLEDGE_MASTER_PASSWORD=zs KNOWLEDGE_AGENT_PASSWORD=zs KNOWLEDGE_HOOK_PASSWORD=zs
+    export POSTGRES_PASSWORD=zs KNOWLEDGE_MASTER_PASSWORD=zs KNOWLEDGE_AGENT_PASSWORD=zs
     ensure_up >/dev/null 2>&1 || true
   )
   if ! container_is_running; then

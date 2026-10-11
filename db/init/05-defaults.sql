@@ -1,4 +1,4 @@
--- 05-defaults.sql: the eleven built-in kinds and the `*` config defaults.
+-- 05-defaults.sql: the ten built-in kinds.
 
 insert into knowledge.kinds (name, description, fields) values
   ('decision', 'a ruling with its why and the options it chose among', '["why","options","who_ruled"]'::jsonb),
@@ -7,15 +7,7 @@ insert into knowledge.kinds (name, description, fields) values
   ('pointer', 'a pointer to a place worth reading', '["path","what"]'::jsonb),
   ('lesson', 'a lesson learned from an incident', '["incident","rule"]'::jsonb),
   ('finding', 'a finding from one hop of one task', '["task","hop","role"]'::jsonb),
-  ('section', 'a markdown section indexed by heading', '["file","heading","lines","summary"]'::jsonb),
   ('incident', 'an incident record', '["date","what","cause","fix"]'::jsonb),
   ('environment', 'a fact about the running environment', '["name","value"]'::jsonb),
   ('recipe', 'a recipe with its steps', '["steps","pointer"]'::jsonb),
   ('term', 'a defined term', '["definition"]'::jsonb);
-
-insert into knowledge.config (project, name, value) values
-  ('*', 'scratch.retention_days', '7'),
-  ('*', 'scratch.digest_lines', '5'),
-  ('*', 'scratch.read_cap', '200'),
-  ('*', 'ds.row_cap', '50'),
-  ('*', 'ds.sql_timeout_ms', '5000');

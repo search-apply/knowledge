@@ -1,5 +1,5 @@
--- demo.sql: seed data for the fake project 'demo' (the README demo and the knowledge part of the
--- tests' fake-project fixture). Load by hand only, never by init, never by the test runner:
+-- demo.sql: seed data for the fake project 'demo' (the README demo). Load by hand only, never by
+-- init, never by the test runner:
 --   docker exec -i <container> psql -U postgres -d knowledge < db/seed/demo.sql
 
 select knowledge.put('demo', 'state', 'runs', 'api and worker containers are up', '{"value":"up"}'::jsonb);
@@ -17,15 +17,15 @@ select knowledge.put('demo', 'finding', 'schema-ready', 'the knowledge tables an
 
 select knowledge.put('demo', 'term', 'current', 'the latest row of every key, the view a session reads at the start', '{"definition":"the view knowledge.current: the newest row per project, kind and key"}'::jsonb);
 
-select knowledge.link('demo', 'demo-store-epic', 'demo-store-goal');
-select knowledge.link('demo', 'demo-store-task', 'demo-store-epic');
-
-select scratch.put('demo', 'sess-demo', 'seq 1 120',
-  (select string_agg('line ' || g, E'\n' order by g) from generate_series(1, 120) g));
-
 set role agent;
 
-create table ds.demo_titles (id int, title text, verdict text);
+create table ds.demo_titles (
+  id int,
+  title text,
+  verdict text,
+  created_at timestamptz default now()
+);
+comment on table ds.demo_titles is 'seven sample title verdicts for the demo project';
 insert into ds.demo_titles (id, title, verdict) values
   (1, 'senior backend engineer', 'good fit'),
   (2, 'junior frontend developer', 'maybe'),
@@ -34,6 +34,5 @@ insert into ds.demo_titles (id, title, verdict) values
   (5, 'devops engineer', 'maybe'),
   (6, 'qa automation engineer', 'good fit'),
   (7, 'engineering manager', 'skip');
-select ds.register('demo', 'demo_titles', 'seven sample title verdicts for the demo project');
 
 reset role;
