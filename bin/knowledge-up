@@ -42,11 +42,11 @@ ensure_network() {
 }
 
 container_running() {
-  [ "$(docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null)" = "true" ]
+  [ "$(docker container inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null)" = "true" ]
 }
 
 up() {
-  if docker inspect "$CONTAINER" >/dev/null 2>&1; then
+  if docker container inspect "$CONTAINER" >/dev/null 2>&1; then
     if container_running; then
       echo "knowledge-up: container $CONTAINER already running"
     else
@@ -55,6 +55,7 @@ up() {
     fi
     exit 0
   fi
+  load_env
   require_passwords
   ensure_network
   local port_args=()
@@ -118,7 +119,7 @@ restore() {
 }
 
 down() {
-  if ! docker inspect "$CONTAINER" >/dev/null 2>&1; then
+  if ! docker container inspect "$CONTAINER" >/dev/null 2>&1; then
     echo "knowledge-up: container $CONTAINER is not present; volume $VOLUME kept"
     return 0
   fi
@@ -161,7 +162,7 @@ migrate() {
 }
 
 status() {
-  if ! docker inspect "$CONTAINER" >/dev/null 2>&1; then
+  if ! docker container inspect "$CONTAINER" >/dev/null 2>&1; then
     echo "status: missing (no container $CONTAINER)"
     echo "dump: newest is $(newest_dump_age_hours)h old (999 means none)"
     return 0

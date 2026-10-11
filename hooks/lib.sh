@@ -157,9 +157,9 @@ ensure_up() {
   knowledge_ensure_env_file
   local container
   container="$(knowledge_container)"
-  if ! docker inspect "$container" >/dev/null 2>&1; then
+  if ! docker container inspect "$container" >/dev/null 2>&1; then
     _knowledge_start_background
-  elif [ "$(docker inspect -f '{{.State.Running}}' "$container" 2>/dev/null)" != "true" ]; then
+  elif [ "$(docker container inspect -f '{{.State.Running}}' "$container" 2>/dev/null)" != "true" ]; then
     docker start "$container" >/dev/null 2>&1 || true
   fi
   _knowledge_wait_ready
