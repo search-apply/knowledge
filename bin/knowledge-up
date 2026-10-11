@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# knowledge-up [--dump|--restore <file>]: brings up the knowledge store container.
+# Plain run: creates the private network when missing, then the container with the named
+# volume at the image's data mount point (/var/lib/postgresql), restart policy unless-stopped,
+# db/init mounted read-only, no host port unless KNOWLEDGE_PORT is set. Exits 1 naming the
+# first unset password variable. A second run, with the container already present, says so
+# and exits 0 (idempotent).
+# --dump: pg_dump -U postgres -Fc knowledge through docker exec into KNOWLEDGE_DUMP_DIR
+# (default $HOME/.knowledge/dumps), named knowledge-<YYYYMMDD-HHMM>.dump.
+# --restore <file>: pg_restore through docker exec -i, from the given dump file.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=../hooks/lib.sh
+source "$ROOT/hooks/lib.sh"
+
+CONTAINER="$(knowledge_container)"
+VOLUME="${KNOWLEDGE_VOLUME:-knowledge_data}"
+NETWORK="${KNOWLEDGE_NETWORK:-knowledge}"
+DUMP_DIR="${KNOWLEDGE_DUMP_DIR:-$HOME/.knowledge/dumps}"
+
+require_passwords() {
+  local v
+  for v in POSTGRES_PASSWORD KNOWLEDGE_MASTER_PASSWORD KNOWLEDGE_AGENT_PASSWORD KNOWLEDGE_HOOK_PASSWORD; do
+    if [ -z "${!v:-}" ]; then
+      echo "knowledge-up: $v is not set" >&2
+      exit 1
+    fi
+  done
+}
+
+ensure_network() {
+  docker network inspect "$NETWORK" >/dev/null 2>&1 || docker network create "$NETWORK" >/dev/null
+}
+
+up() {
+  require_passwords
+  if docker inspect "$CONTAINER" >/dev/null 2>&1; then
+    echo "knowledge-up: container $CONTAINER already exists"
+    exit 0
+  fi
+  ensure_network
+  local port_args=()
+  if [ -n "${KNOWLEDGE_PORT:-}" ]; then
+    port_args=(-p "127.0.0.1:${KNOWLEDGE_PORT}:5432")
+  fi
+  docker run -d --name "$CONTAINER" \
+    --network "$NETWORK" \
+    --restart unless-stopped \
+    -e POSTGRES_PASSWORD \
+    -e POSTGRES_DB=knowledge \
+    -e KNOWLEDGE_MASTER_PASSWORD \
+    -e KNOWLEDGE_AGENT_PASSWORD \
+    -e KNOWLEDGE_HOOK_PASSWORD \
+    -v "${VOLUME}:/var/lib/postgresql" \
+    -v "$ROOT/db/init:/docker-entrypoint-initdb.d:ro" \
+    ${port_args[@]+"${port_args[@]}"} \
+    postgres:18 >/dev/null
+  echo "knowledge-up: started $CONTAINER"
+}
+
+dump() {
+  mkdir -p "$DUMP_DIR"
+  local file="$DUMP_DIR/knowledge-$(date +%Y%m%d-%H%M).dump"
+  docker exec "$CONTAINER" pg_dump -U postgres -Fc knowledge > "$file"
+  echo "knowledge-up: dumped to $file"
+}
+
+restore() {
+  local file="$1"
+  [ -n "$file" ] || { echo "knowledge-up: --restore needs a file" >&2; exit 1; }
+  docker exec -i "$CONTAINER" pg_restore -U postgres -d knowledge --clean --if-exists < "$file"
+  echo "knowledge-up: restored from $file"
+}
+
+case "${1:-}" in
+  --dump) dump ;;
+  --restore) restore "${2:-}" ;;
+  "") up ;;
+  *) echo "knowledge-up: unknown argument $1" >&2; exit 1 ;;
+esac
