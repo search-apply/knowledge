@@ -53,6 +53,7 @@ create table knowledge.issues (
 -- base grants: master owns the data, agent reads it, hook stays out (no usage on this schema).
 grant select, insert, update, delete on knowledge.kinds, knowledge.rows, knowledge.config, knowledge.issues to master;
 grant usage, select on all sequences in schema knowledge to master;
+grant all on knowledge.current to master;
 grant select on knowledge.kinds, knowledge.rows, knowledge.config, knowledge.issues, knowledge.current to agent;
 
 -- functions
@@ -357,8 +358,8 @@ declare
   v_count int := 0;
 begin
   for v_elem in
-    select e.value from jsonb_array_elements(doc) with ordinality as e (value, ord)
-    order by e.ord
+    select e.value from jsonb_array_elements(doc) as e (value)
+    order by (e.value ->> 'created_at')::timestamptz
   loop
     perform knowledge.put(
       project,

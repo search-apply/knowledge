@@ -290,3 +290,32 @@ begin
   assert position('current value' in md) > 0, 'markdown export shows the current row';
   assert position('superseded value' in md) = 0, 'markdown export omits the superseded row';
 end $$;
+
+-- Should_EnforceGrants_When_MasterActs (knowledge part)
+
+-- break: master lacks select on knowledge.current, so every security invoker function that
+-- reads the view (put, get, search, list, recall, about, export) raises insufficient_privilege
+-- when run as master.
+do $$
+declare
+  id_a bigint;
+  id_b bigint;
+  rec text;
+  exp text;
+  cnt int;
+begin
+  set role master;
+  id_a := knowledge.put('t2-master', 'state', 'a', 'state value', '{"value":"v"}'::jsonb);
+  id_b := knowledge.put('t2-master', 'decision', 'b', 'decision value', '{"why":"w","options":"o","who_ruled":"master"}'::jsonb, issue := 't2-master#1');
+  assert (select count(*) from knowledge.get(id_a)) = 1, 'master get must return the row';
+  assert (select count(*) from knowledge.search('t2-master', 'state')) >= 1, 'master search must find the row';
+  assert (select count(*) from knowledge.list('t2-master', 'state')) >= 1, 'master list must find the row';
+  perform knowledge.link('t2-master', 't2-master#1', 't2-master#0');
+  assert (select count(*) from knowledge.about('t2-master', 't2-master#1')) >= 1, 'master about must return the row';
+  rec := knowledge.recall('t2-master');
+  assert rec like '%t2-master recall%', 'master recall must return the sections';
+  exp := knowledge.export('t2-master', 'json');
+  cnt := knowledge.import('t2-master-b', exp::jsonb);
+  assert cnt = 2, format('master import must load the two exported rows; got %s', cnt);
+  reset role;
+end $$;
