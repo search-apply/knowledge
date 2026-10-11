@@ -19,7 +19,7 @@ cleanup() {
     docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
   fi
 }
-trap cleanup EXIT
+trap cleanup EXIT INT TERM PIPE
 
 docker run -d --name "$CONTAINER" \
   -e POSTGRES_DB=knowledge \
@@ -29,6 +29,20 @@ docker run -d --name "$CONTAINER" \
   -e KNOWLEDGE_HOOK_PASSWORD=test \
   -v "$ROOT/db/init":/docker-entrypoint-initdb.d:ro \
   postgres:18 >/dev/null
+
+initdone=0
+for i in $(seq 1 60); do
+  if docker logs "$CONTAINER" 2>&1 | grep -qF 'PostgreSQL init process complete'; then
+    initdone=1
+    break
+  fi
+  sleep 1
+done
+
+if [ "$initdone" -ne 1 ]; then
+  echo "run.sh: init scripts did not complete within 60s" >&2
+  exit 1
+fi
 
 ready=0
 for i in $(seq 1 60); do
@@ -44,9 +58,10 @@ if [ "$ready" -ne 1 ]; then
   exit 1
 fi
 
-if docker logs "$CONTAINER" 2>&1 | grep -qE '(ERROR|FATAL)'; then
+initlog="$(docker logs "$CONTAINER" 2>&1 | awk '/PostgreSQL init process complete/{f=1} f')"
+if echo "$initlog" | grep -qE '(ERROR|FATAL)'; then
   echo "run.sh: init log holds an ERROR or FATAL line" >&2
-  docker logs "$CONTAINER" 2>&1 | grep -E '(ERROR|FATAL)' >&2
+  echo "$initlog" | grep -E '(ERROR|FATAL)' >&2
   exit 1
 fi
 
