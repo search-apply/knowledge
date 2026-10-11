@@ -117,13 +117,13 @@ declare
   v_register_failed boolean := false;
 begin
   -- under the cap: 10 rows returned whole
-  select * into rec from ds.sql('select g from generate_series(1,10) g');
+  select * into rec from ds.sql('t13-ds', 'select g from generate_series(1,10) g');
   assert rec.rows_total = 10, format('under the cap, rows_total must be 10; got %s', rec.rows_total);
   assert jsonb_array_length(rec.result) = 10, 'under the cap, result must hold all 10 rows';
   assert rec.saved_table is null, 'under the cap, saved_table must be null';
 
   -- over the cap: 120 rows saved as ds.result_<n> and registered
-  select * into rec from ds.sql('select g from generate_series(1,120) g');
+  select * into rec from ds.sql('t13-ds', 'select g from generate_series(1,120) g');
   assert rec.rows_total = 120, format('over the cap, rows_total must be 120; got %s', rec.rows_total);
   assert rec.saved_table like 'result_%', format('over the cap, saved_table must be a result_<n> name; got %s', rec.saved_table);
   execute format('select count(*) from ds.%I', rec.saved_table) into v_after;
@@ -133,7 +133,7 @@ begin
   -- a select calling a writer inside the statement fails read-only, nothing changes
   select count(*) into v_before from knowledge.rows where project = 't13-ds';
   begin
-    perform ds.sql($q$select knowledge.put('t13-ds','state','k','v','{"value":"v"}'::jsonb)$q$);
+    perform ds.sql('t13-ds', $q$select knowledge.put('t13-ds','state','k','v','{"value":"v"}'::jsonb)$q$);
     v_register_failed := false;
   exception when read_only_sql_transaction then v_register_failed := true; end;
   select count(*) into v_after from knowledge.rows where project = 't13-ds';
@@ -142,7 +142,7 @@ begin
 
   -- insert as the statement fails
   begin
-    perform ds.sql('insert into ds.catalog (table_name, project, summary) values (''t13-x'', ''t13-ds'', ''x'')');
+    perform ds.sql('t13-ds', 'insert into ds.catalog (table_name, project, summary) values (''t13-x'', ''t13-ds'', ''x'')');
     v_write_failed := false;
   exception when others then v_write_failed := true; end;
   assert v_write_failed, 'insert as the statement must fail';
@@ -150,7 +150,7 @@ begin
   -- a slow statement is cancelled within 6s
   v_t0 := clock_timestamp();
   begin
-    perform ds.sql('select pg_sleep(6)');
+    perform ds.sql('t13-ds', 'select pg_sleep(6)');
     v_timed_out := false;
   exception when query_canceled then v_timed_out := true; end;
   v_elapsed := clock_timestamp() - v_t0;

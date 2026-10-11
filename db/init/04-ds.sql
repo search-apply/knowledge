@@ -116,7 +116,7 @@ begin
 end;
 $$;
 
-create or replace function ds.sql(statement text)
+create or replace function ds.sql(project text, statement text)
 returns table (rows_total bigint, result jsonb, saved_table text)
 language plpgsql security invoker as $$
 #variable_conflict use_variable
@@ -154,7 +154,7 @@ begin
       execute format('set local statement_timeout = %s', v_timeout);
       execute format('create table ds.%I as %s', v_table, statement);
       execute format('select count(*) from ds.%I', v_table) into v_count;
-      perform ds.register('*', v_table, 'result of: ' || left(statement, 120));
+      perform ds.register(project, v_table, 'result of: ' || left(statement, 120));
       v_desc := ds.describe(v_table);
 
       rows_total := v_count;

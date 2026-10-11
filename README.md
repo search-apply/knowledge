@@ -61,10 +61,12 @@ Claude Code (`.mcp.json`, shipped with the plugin):
 Cursor (`.cursor/mcp.json`) and Codex (`~/.codex/config.toml` `[mcp_servers.knowledge]`) take the
 same `command`/`args`/`env` shape as the block above, under their own config key.
 
-A plain MCP client, or `uvx` instead of docker:
+A plain MCP client, or `uvx` instead of docker: `KNOWLEDGE_PORT` is unset by default (the docker
+form above needs no port; set `KNOWLEDGE_PORT` to publish the container's port, as the Environment
+table above shows).
 
 ```
-DATABASE_URI=postgresql://agent:$KNOWLEDGE_AGENT_PASSWORD@localhost:5432/knowledge \
+DATABASE_URI=postgresql://agent:$KNOWLEDGE_AGENT_PASSWORD@localhost:$KNOWLEDGE_PORT/knowledge \
   uvx postgres-mcp --access-mode=unrestricted
 ```
 
