@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # skills.sh: the hook tests for the three skills (Should_CarryTheRules_When_SkillsRead).
-# For each skill: wc -l at most 80, and a grep for every phrase the contract names finds it in the
+# For each skill: wc -l under 55, and a grep for every phrase the contract names finds it in the
 # named file. Each case prints PASS <name> or FAIL <name>: <reason>; the script exits 1 on any FAIL.
 # Run by db/tests/run.sh (cwd=repo root) or standalone from the repo root.
 set -uo pipefail
@@ -26,11 +26,11 @@ check_phrase() {
   if grep -qF -- "$phrase" "$file"; then pass "phrase $1 <$phrase>"; else fail "phrase $1 <$phrase>" "not found"; fi
 }
 
-check_lines skills/knowledge/SKILL.md 80
-check_lines skills/datasets/SKILL.md 80
-check_lines skills/scratch/SKILL.md 80
+check_lines skills/knowledge/SKILL.md 54
+check_lines skills/datasets/SKILL.md 54
+check_lines skills/scratch/SKILL.md 54
 
-for p in recall search get about put supersede link "three lines" pg_dump "only the master"; do
+for p in recall search get about put supersede link add_kind "three lines" "main session"; do
   check_phrase skills/knowledge/SKILL.md "$p"
 done
 

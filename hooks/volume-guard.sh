@@ -67,7 +67,13 @@ self_test() {
 main() {
   local input cmd
   input=$(cat)
-  cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty')
+  if command -v jq >/dev/null 2>&1; then
+    cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty')
+  else
+    # jq absent: fail open on well-formed extraction but keep guarding -- the same patterns
+    # match inside the raw JSON text.
+    cmd="$input"
+  fi
   decide "$cmd"
   exit $?
 }

@@ -117,13 +117,13 @@ declare
   v_register_failed boolean := false;
 begin
   -- under the cap: 10 rows returned whole
-  select * into rec from ds.sql('select g from generate_series(1,10) g');
+  select * into rec from ds.sql('t13-ds', 'select g from generate_series(1,10) g');
   assert rec.rows_total = 10, format('under the cap, rows_total must be 10; got %s', rec.rows_total);
   assert jsonb_array_length(rec.result) = 10, 'under the cap, result must hold all 10 rows';
   assert rec.saved_table is null, 'under the cap, saved_table must be null';
 
   -- over the cap: 120 rows saved as ds.result_<n> and registered
-  select * into rec from ds.sql('select g from generate_series(1,120) g');
+  select * into rec from ds.sql('t13-ds', 'select g from generate_series(1,120) g');
   assert rec.rows_total = 120, format('over the cap, rows_total must be 120; got %s', rec.rows_total);
   assert rec.saved_table like 'result_%', format('over the cap, saved_table must be a result_<n> name; got %s', rec.saved_table);
   execute format('select count(*) from ds.%I', rec.saved_table) into v_after;
@@ -133,7 +133,7 @@ begin
   -- a select calling a writer inside the statement fails read-only, nothing changes
   select count(*) into v_before from knowledge.rows where project = 't13-ds';
   begin
-    perform ds.sql($q$select knowledge.put('t13-ds','state','k','v','{"value":"v"}'::jsonb)$q$);
+    perform ds.sql('t13-ds', $q$select knowledge.put('t13-ds','state','k','v','{"value":"v"}'::jsonb)$q$);
     v_register_failed := false;
   exception when read_only_sql_transaction then v_register_failed := true; end;
   select count(*) into v_after from knowledge.rows where project = 't13-ds';
@@ -142,7 +142,7 @@ begin
 
   -- insert as the statement fails
   begin
-    perform ds.sql('insert into ds.catalog (table_name, project, summary) values (''t13-x'', ''t13-ds'', ''x'')');
+    perform ds.sql('t13-ds', 'insert into ds.catalog (table_name, project, summary) values (''t13-x'', ''t13-ds'', ''x'')');
     v_write_failed := false;
   exception when others then v_write_failed := true; end;
   assert v_write_failed, 'insert as the statement must fail';
@@ -150,10 +150,51 @@ begin
   -- a slow statement is cancelled within 6s
   v_t0 := clock_timestamp();
   begin
-    perform ds.sql('select pg_sleep(6)');
+    perform ds.sql('t13-ds', 'select pg_sleep(6)');
     v_timed_out := false;
   exception when query_canceled then v_timed_out := true; end;
   v_elapsed := clock_timestamp() - v_t0;
   assert v_timed_out, 'a slow statement must raise query_canceled';
+  assert v_timed_out, 'a slow statement must raise query_canceled';
   assert v_elapsed < interval '6 seconds', format('the timeout must cancel before 6s; took %s', v_elapsed);
+end $$;
+
+-- break: ds.sql reads the '*' row_cap instead of the project's own override, so a project that
+-- lowers its cap still gets the default's under-cap pass-through.
+
+set role master;
+insert into knowledge.config (project, name, value) values ('t14-ds', 'ds.row_cap', '1');
+reset role;
+
+do $$
+declare
+  rec record;
+begin
+  select * into rec from ds.sql('t14-ds', 'select g from generate_series(1,2) g');
+  assert rec.saved_table like 'result_%', format('the project row_cap of 1 must send 2 rows over the cap; got saved_table %s', rec.saved_table);
+  assert rec.result = to_jsonb(ds.describe(rec.saved_table)), 'the over-cap result must carry the describe text';
+end $$;
+
+-- Should_ListStaleTables_When_StaleCalled
+
+-- A never-scanned table is stale; a table read just now is not. The read and the stats flush are
+-- their own top-level statements (each its own transaction) so the scan is visible to the block
+-- below; both tables are empty, so autovacuum never touches the cold one and its scan times stay
+-- null. last_idx_scan is null for both (no indexes), so staleness turns on last_seq_scan alone.
+-- break: stale omits a never-scanned table, or still lists a table that was just read.
+create table ds.t_stale_hot (id int);
+insert into ds.t_stale_hot values (1);
+select ds.register('t-dsstale', 't_stale_hot', 'a table read just now');
+create table ds.t_stale_cold (id int);
+select ds.register('t-dsstale', 't_stale_cold', 'a table never read');
+
+select count(*) from ds.t_stale_hot;
+select pg_stat_force_next_flush();
+
+do $$
+begin
+  assert exists (select 1 from ds.stale('t-dsstale', 1) s where s.table_name = 't_stale_cold'),
+    'a never-scanned table (both scan times null) is stale';
+  assert not exists (select 1 from ds.stale('t-dsstale', 1) s where s.table_name = 't_stale_hot'),
+    'a table read within the day window is not stale';
 end $$;

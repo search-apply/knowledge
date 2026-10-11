@@ -34,7 +34,8 @@ store_and_digest() {
   project="$(knowledge_project)"
   session="${KNOWLEDGE_SESSION:-}"
   cmd_trunc="${command:0:500}"
-  body="$(cat "$file")"
+  # scratch.outputs.body is text; Postgres text cannot hold a NUL, so NUL bytes are dropped here.
+  body="$(tr -d '\000' < "$file")"
 
   csv="$(csv_field "$project"),$(csv_field "$session"),$(csv_field "$cmd_trunc"),$(csv_field "$body")"
 

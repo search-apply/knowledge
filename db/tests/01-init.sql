@@ -51,3 +51,18 @@ begin
   assert has_schema_privilege('agent', 'ds', 'create'),       'create: agent should have create on ds';
   assert not has_schema_privilege('hook', 'ds', 'create'),    'create: hook should NOT have create on ds';
 end $$;
+
+-- break: a default kind or config row is missing, duplicated or dropped by a later init file.
+do $$
+declare
+  kind_count int;
+  config_count int;
+begin
+  select count(*) into kind_count from knowledge.kinds;
+  assert kind_count = 11,
+    format('kinds: expected the eleven built-in kinds (11), found %s', kind_count);
+
+  select count(*) into config_count from knowledge.config;
+  assert config_count = 8,
+    format('config: expected the eight `*` defaults (8), found %s', config_count);
+end $$;

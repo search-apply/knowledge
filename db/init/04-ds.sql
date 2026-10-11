@@ -116,7 +116,7 @@ begin
 end;
 $$;
 
-create or replace function ds.sql(statement text)
+create or replace function ds.sql(project text, statement text)
 returns table (rows_total bigint, result jsonb, saved_table text)
 language plpgsql security invoker as $$
 #variable_conflict use_variable
@@ -128,8 +128,8 @@ declare
   v_table text;
   v_desc text;
 begin
-  v_cap := coalesce(knowledge.setting('*', 'ds.row_cap'), '50')::int;
-  v_timeout := coalesce(knowledge.setting('*', 'ds.sql_timeout_ms'), '5000')::int;
+  v_cap := coalesce(knowledge.setting(project, 'ds.row_cap'), '50')::int;
+  v_timeout := coalesce(knowledge.setting(project, 'ds.sql_timeout_ms'), '5000')::int;
 
   begin
     set local transaction_read_only = on;
@@ -154,7 +154,7 @@ begin
       execute format('set local statement_timeout = %s', v_timeout);
       execute format('create table ds.%I as %s', v_table, statement);
       execute format('select count(*) from ds.%I', v_table) into v_count;
-      perform ds.register('*', v_table, 'result of: ' || left(statement, 120));
+      perform ds.register(project, v_table, 'result of: ' || left(statement, 120));
       v_desc := ds.describe(v_table);
 
       rows_total := v_count;
@@ -164,6 +164,23 @@ begin
       return;
   end;
 end;
+$$;
+
+-- stale(project, days): catalogued tables that have not been read in days -- both the last
+-- sequential scan and the last index scan are null (never scanned) or older than days.
+-- last_seq_scan and last_idx_scan come from pg_stat_all_tables (PostgreSQL 16+); a null is
+-- treated as the epoch, so a never-scanned table always counts as stale.
+create or replace function ds.stale(project text, days int)
+returns table (table_name text, last_seq_scan timestamptz, last_idx_scan timestamptz, summary text)
+language sql stable security invoker as $$
+  select c.table_name, s.last_seq_scan, s.last_idx_scan, c.summary
+  from ds.catalog c
+  left join pg_stat_all_tables s
+    on s.schemaname = 'ds' and s.relname = c.table_name
+  where c.project = stale.project
+    and coalesce(s.last_seq_scan, 'epoch'::timestamptz) < now() - make_interval(days => stale.days)
+    and coalesce(s.last_idx_scan, 'epoch'::timestamptz) < now() - make_interval(days => stale.days)
+  order by c.created_at;
 $$;
 
 -- grants: master all on ds.catalog and ds.result_seq; agent all on ds.catalog plus usage on

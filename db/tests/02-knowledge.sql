@@ -245,12 +245,12 @@ declare
   r3 bigint;
   ids bigint[];
 begin
-  r1 := knowledge.put('t7', 'state', 'a', 'root', '{"value":"v"}'::jsonb, issue := 't7#1');
-  r2 := knowledge.put('t7', 'state', 'b', 'mid', '{"value":"v"}'::jsonb, issue := 't7#2');
-  r3 := knowledge.put('t7', 'state', 'c', 'leaf', '{"value":"v"}'::jsonb, issue := 't7#3');
-  perform knowledge.link('t7', 't7#3', 't7#2');
-  perform knowledge.link('t7', 't7#2', 't7#1');
-  select array_agg(id) into ids from knowledge.about('t7', 't7#3');
+  r1 := knowledge.put('t7', 'state', 'a', 'root', '{"value":"v"}'::jsonb, issue := 't7-a');
+  r2 := knowledge.put('t7', 'state', 'b', 'mid', '{"value":"v"}'::jsonb, issue := 't7-b');
+  r3 := knowledge.put('t7', 'state', 'c', 'leaf', '{"value":"v"}'::jsonb, issue := 't7-c');
+  perform knowledge.link('t7', 't7-c', 't7-b');
+  perform knowledge.link('t7', 't7-b', 't7-a');
+  select array_agg(id) into ids from knowledge.about('t7', 't7-c');
   assert ids = array[r3, r2, r1], format('about must return the issue, its parent and its grandparent in that order; got %s', ids);
 end $$;
 
@@ -267,7 +267,7 @@ declare
 begin
   perform knowledge.put('t8src', 'decision', 'a', E'first line a\nsecond', '{"why":"w","options":"o","who_ruled":"master"}'::jsonb, source := 'src', tags := array['x']);
   perform knowledge.put('t8src', 'state', 'b', 'superseded value', '{"value":"v"}'::jsonb);
-  perform knowledge.put('t8src', 'decision', 'a2', 'another a', '{"why":"w","options":"o","who_ruled":"master"}'::jsonb, issue := 't8#1', commit := 'abc123');
+  perform knowledge.put('t8src', 'decision', 'a2', 'another a', '{"why":"w","options":"o","who_ruled":"master"}'::jsonb, issue := 't8-a', commit := 'abc123');
   perform knowledge.put('t8src', 'state', 'b', 'current value', '{"value":"v2"}'::jsonb);
 
   cnt := knowledge.import('t8dst', knowledge.export('t8src', 'json')::jsonb);
@@ -306,12 +306,12 @@ declare
 begin
   set role master;
   id_a := knowledge.put('t2-master', 'state', 'a', 'state value', '{"value":"v"}'::jsonb);
-  id_b := knowledge.put('t2-master', 'decision', 'b', 'decision value', '{"why":"w","options":"o","who_ruled":"master"}'::jsonb, issue := 't2-master#1');
+  id_b := knowledge.put('t2-master', 'decision', 'b', 'decision value', '{"why":"w","options":"o","who_ruled":"master"}'::jsonb, issue := 't2-master-a');
   assert (select count(*) from knowledge.get(id_a)) = 1, 'master get must return the row';
   assert (select count(*) from knowledge.search('t2-master', 'state')) >= 1, 'master search must find the row';
   assert (select count(*) from knowledge.list('t2-master', 'state')) >= 1, 'master list must find the row';
-  perform knowledge.link('t2-master', 't2-master#1', 't2-master#0');
-  assert (select count(*) from knowledge.about('t2-master', 't2-master#1')) >= 1, 'master about must return the row';
+  perform knowledge.link('t2-master', 't2-master-a', 't2-master-root');
+  assert (select count(*) from knowledge.about('t2-master', 't2-master-a')) >= 1, 'master about must return the row';
   rec := knowledge.recall('t2-master');
   assert rec like '%t2-master recall%', 'master recall must return the sections';
   exp := knowledge.export('t2-master', 'json');
@@ -341,4 +341,43 @@ begin
   p_open := position('## open' in r);
   ds_section := substring(r from p_ds for p_open - p_ds);
   assert position('demo_titles: 7 rows' in ds_section) > 0, 'recall datasets section must show demo_titles: 7 rows';
+end $$;
+
+-- Should_ListStaleRows_When_StaleCalled (and the recall stale nudge)
+
+-- break: stale returns a fresh row, omits an aged row, ignores the environment kind, counts a
+-- superseded row, or recall shows the trailing nudge at the wrong time.
+do $$
+declare
+  id_fresh bigint;
+  id_old_state bigint;
+  id_old_env bigint;
+  r text;
+  stale_keys text[];
+begin
+  id_fresh := knowledge.put('t-stale', 'state', 'fresh', 'just set', '{"value":"v"}'::jsonb);
+  id_old_state := knowledge.put('t-stale', 'state', 'old', 'set long ago', '{"value":"v"}'::jsonb);
+  update knowledge.rows set created_at = now() - interval '40 days' where id = id_old_state;
+  id_old_env := knowledge.put('t-stale', 'environment', 'box', 'the old box', '{"name":"box","value":"x"}'::jsonb);
+  update knowledge.rows set created_at = now() - interval '40 days' where id = id_old_env;
+
+  select array_agg(key order by key) into stale_keys from knowledge.stale('t-stale', 30);
+  assert stale_keys = array['box', 'old'], format('stale(30) must return the aged state and environment rows only; got %s', stale_keys);
+  assert not exists (select 1 from knowledge.stale('t-stale', 30) s where s.id = id_fresh), 'a fresh row is never stale';
+
+  perform knowledge.put('t-stale', 'state', 'old', 'set again just now', '{"value":"v"}'::jsonb);
+  assert not exists (select 1 from knowledge.stale('t-stale', 30) s where s.key = 'old'), 'a re-put row is no longer stale';
+
+  r := knowledge.recall('t-stale');
+  assert position('stale over 30 days' in r) > 0, 'recall ends with the stale nudge while an aged row remains';
+  assert position('knowledge.stale(''t-stale'', 30)' in r) > 0, 'the nudge names the call that lists the stale rows';
+end $$;
+
+-- break: recall prints a stale line for a project with nothing stale.
+do $$
+declare r text;
+begin
+  perform knowledge.put('t-stale-clean', 'state', 'runs', 'up now', '{"value":"v"}'::jsonb);
+  r := knowledge.recall('t-stale-clean');
+  assert position('stale over' in r) = 0, 'recall adds no stale line when nothing is stale';
 end $$;

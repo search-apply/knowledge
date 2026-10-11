@@ -82,6 +82,13 @@ self_test() {
 main() {
   local input
   input=$(cat)
+  # jq absent: fail open, print nothing, the command runs unwrapped.
+  command -v jq >/dev/null 2>&1 || return 0
+  # Fail open as before. When the store is down, nudge it up once (cheap: when docker is down
+  # ensure_up is a single failed check). Output is swallowed so the hook emits only its JSON.
+  if ! store_up 2>/dev/null; then
+    ensure_up >/dev/null 2>&1 || true
+  fi
   process "$input"
 }
 
