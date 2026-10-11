@@ -1,7 +1,7 @@
 {
   "name": "knowledge",
-  "version": "0.2.0",
-  "description": "A memory for coding agents: one Postgres container, a standard Postgres MCP server in front, two skills that teach the model how to store and query.",
+  "version": "0.3.0",
+  "description": "A memory for coding agents: one Postgres container, a standard Postgres MCP server in front, six plain tables that hold what a session learns mapped to tasks and sessions, and two skills that teach the model how to store and query.",
   "author": {
     "name": "Oleh Kutafin"
   }
