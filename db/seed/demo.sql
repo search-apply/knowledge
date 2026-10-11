@@ -19,3 +19,6 @@ select knowledge.put('demo', 'term', 'recall', 'the short text a session reads w
 
 select knowledge.link('demo', 'demo#2', 'demo#1');
 select knowledge.link('demo', 'demo#3', 'demo#2');
+
+select scratch.put('demo', 'sess-demo', 'seq 1 120',
+  (select string_agg('line ' || g, E'\n' order by g) from generate_series(1, 120) g));
