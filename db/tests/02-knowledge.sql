@@ -245,12 +245,12 @@ declare
   r3 bigint;
   ids bigint[];
 begin
-  r1 := knowledge.put('t7', 'state', 'a', 'root', '{"value":"v"}'::jsonb, issue := 't7#1');
-  r2 := knowledge.put('t7', 'state', 'b', 'mid', '{"value":"v"}'::jsonb, issue := 't7#2');
-  r3 := knowledge.put('t7', 'state', 'c', 'leaf', '{"value":"v"}'::jsonb, issue := 't7#3');
-  perform knowledge.link('t7', 't7#3', 't7#2');
-  perform knowledge.link('t7', 't7#2', 't7#1');
-  select array_agg(id) into ids from knowledge.about('t7', 't7#3');
+  r1 := knowledge.put('t7', 'state', 'a', 'root', '{"value":"v"}'::jsonb, issue := 't7-a');
+  r2 := knowledge.put('t7', 'state', 'b', 'mid', '{"value":"v"}'::jsonb, issue := 't7-b');
+  r3 := knowledge.put('t7', 'state', 'c', 'leaf', '{"value":"v"}'::jsonb, issue := 't7-c');
+  perform knowledge.link('t7', 't7-c', 't7-b');
+  perform knowledge.link('t7', 't7-b', 't7-a');
+  select array_agg(id) into ids from knowledge.about('t7', 't7-c');
   assert ids = array[r3, r2, r1], format('about must return the issue, its parent and its grandparent in that order; got %s', ids);
 end $$;
 
@@ -267,7 +267,7 @@ declare
 begin
   perform knowledge.put('t8src', 'decision', 'a', E'first line a\nsecond', '{"why":"w","options":"o","who_ruled":"master"}'::jsonb, source := 'src', tags := array['x']);
   perform knowledge.put('t8src', 'state', 'b', 'superseded value', '{"value":"v"}'::jsonb);
-  perform knowledge.put('t8src', 'decision', 'a2', 'another a', '{"why":"w","options":"o","who_ruled":"master"}'::jsonb, issue := 't8#1', commit := 'abc123');
+  perform knowledge.put('t8src', 'decision', 'a2', 'another a', '{"why":"w","options":"o","who_ruled":"master"}'::jsonb, issue := 't8-a', commit := 'abc123');
   perform knowledge.put('t8src', 'state', 'b', 'current value', '{"value":"v2"}'::jsonb);
 
   cnt := knowledge.import('t8dst', knowledge.export('t8src', 'json')::jsonb);
@@ -306,12 +306,12 @@ declare
 begin
   set role master;
   id_a := knowledge.put('t2-master', 'state', 'a', 'state value', '{"value":"v"}'::jsonb);
-  id_b := knowledge.put('t2-master', 'decision', 'b', 'decision value', '{"why":"w","options":"o","who_ruled":"master"}'::jsonb, issue := 't2-master#1');
+  id_b := knowledge.put('t2-master', 'decision', 'b', 'decision value', '{"why":"w","options":"o","who_ruled":"master"}'::jsonb, issue := 't2-master-a');
   assert (select count(*) from knowledge.get(id_a)) = 1, 'master get must return the row';
   assert (select count(*) from knowledge.search('t2-master', 'state')) >= 1, 'master search must find the row';
   assert (select count(*) from knowledge.list('t2-master', 'state')) >= 1, 'master list must find the row';
-  perform knowledge.link('t2-master', 't2-master#1', 't2-master#0');
-  assert (select count(*) from knowledge.about('t2-master', 't2-master#1')) >= 1, 'master about must return the row';
+  perform knowledge.link('t2-master', 't2-master-a', 't2-master-root');
+  assert (select count(*) from knowledge.about('t2-master', 't2-master-a')) >= 1, 'master about must return the row';
   rec := knowledge.recall('t2-master');
   assert rec like '%t2-master recall%', 'master recall must return the sections';
   exp := knowledge.export('t2-master', 'json');

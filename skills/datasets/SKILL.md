@@ -19,10 +19,11 @@ Plain tables an agent writes and keeps while useful. Any role creates tables in 
 - Describe before you query, to learn the columns: `select * from ds.describe('postings');`
 - Run one read-only statement with a timeout and a row cap: `select * from ds.sql('<project>', 'select company, count(*) from ds.postings group by 1');` a result past the cap is saved as `ds.result_<n>`.
 - A raw select outside `ds.sql` carries its own `LIMIT`; never read a table whole.
+- List tables gone stale (not read within the window): `select * from ds.stale('<project>', 30);`
 
 ## Updating
 - Change columns in place: `update ds.postings set company = 'Acme' where id = 1;`
 - When a table is done, drop it and its catalog row: `drop table ds.postings;` then remove its `ds.register` entry.
 
 ## The reply
-- A research or audit hop returns a short summary plus the table name, never the rows.
+- A research or audit task returns a short summary plus the table name, never the rows.
