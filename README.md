@@ -46,18 +46,22 @@ claude plugin marketplace add search-apply/knowledge
 claude plugin install knowledge@knowledge
 ```
 
-Then open Claude Code in any repository and say:
-
-```
-use the knowledge plugin
-```
-
-Nothing else. On that first start the plugin, in the background:
+Then open Claude Code in any repository. The store comes up at the session start on its own, before
+you type anything: the SessionStart hook runs and, on that first start, the plugin in the
+background:
 
 - writes `$HOME/.config/knowledge/env` with four random passwords (mode 600);
 - creates a private docker network and the `knowledge` container on it, from `postgres:18`, with a
   named volume for its data;
 - pulls the Postgres MCP image.
+
+Saying
+
+```
+use the knowledge plugin
+```
+
+does not start anything; it only tells the model to lean on the store that is already coming up.
 
 A cold first start takes a few seconds, so the first session prints one line saying the store is
 coming up and will be used from the next command on. Every session after that opens with the recall
@@ -139,6 +143,10 @@ The store replaces a large paste with a small read.
 | scratch: `db/tests/run.sh` (13 lines) -- under threshold | 286 | 286 | 0 |
 | dataset: 2000 rows pasted vs one `ds.sql` summary | 10,956 | 447 | 10,509 |
 
+The orientation with-store figure (125) is the recall of the small twelve-row `demo` project; a
+real project's recall is capped at ten rows per section and will run to several hundred tokens, so
+read 125 as the shape of the saving, not a fixed promise.
+
 Method and commands:
 
 - orientation: `wc -c` of the newest file in the Playbook handoffs folder (4,191 chars) plus
@@ -188,14 +196,18 @@ docker exec -i knowledge psql -U master -d knowledge -qAt \
   -c "select knowledge.export('<project>', 'json')" > knowledge-<project>.json
 ```
 
-Commit that file. On the other machine, import it:
+Commit that file. On the other machine, import it as `master` -- the file is read on the host and
+passed in as a psql variable, so no superuser or server-side file read is needed:
 
 ```
-docker exec -i knowledge psql -U master -d knowledge \
-  -c "select knowledge.import('<project>', pg_read_file('/path/to/knowledge-<project>.json')::jsonb)"
+docker exec -i knowledge psql -U master -d knowledge -v doc="$(cat knowledge-<project>.json)" <<'SQL'
+select knowledge.import('<project>', :'doc'::jsonb);
+SQL
 ```
 
-Import replays each row in order, so a later export of the same project is a clean round-trip.
+(The statement must come in on stdin, as above, because psql expands `:'doc'` only there, not with
+`-c`.) Import replays each row in order, so a later export of the same project is a clean
+round-trip.
 
 ## Backup, restore, upgrade, uninstall
 
@@ -232,6 +244,7 @@ Import replays each row in order, so a later export of the same project is a cle
 | `KNOWLEDGE_PROJECT` | the working directory's name | the `project` column of every row |
 | `KNOWLEDGE_DUMP_DIR` | `$HOME/.knowledge/dumps` | the daily `pg_dump` folder |
 | `KNOWLEDGE_SCRATCH_THRESHOLD`, `KNOWLEDGE_SCRATCH` | `40`, `on` | lines before an output is stored; `off` disables the wrapper |
+| `KNOWLEDGE_WAIT_SECS` | `5` in the hooks, `30` in `bin/mcp` | seconds to wait for the store to answer before giving up (fail open) |
 | `KNOWLEDGE_AUTOUP` | `on` | `off` to manage the store yourself (the plugin will not create or start it) |
 
 ## Development
