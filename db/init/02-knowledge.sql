@@ -213,3 +213,170 @@ begin
 end;
 $$;
 
+create or replace function knowledge.recall(project text)
+returns text
+language plpgsql stable security invoker as $$
+#variable_conflict use_variable
+declare
+  v_cap int;
+  v_decision_days int;
+  v_lesson_days int;
+  v_lines text[] := array[]::text[];
+  v_row record;
+  v_cnt int;
+  v_rowcount bigint;
+begin
+  v_cap := coalesce(knowledge.setting(project, 'recall.section_cap'), '10')::int;
+  v_decision_days := coalesce(knowledge.setting(project, 'recall.decision_days'), '30')::int;
+  v_lesson_days := coalesce(knowledge.setting(project, 'recall.lesson_days'), '14')::int;
+
+  v_lines := v_lines || array[('# ' || project || ' recall ' || to_char(now(), 'YYYY-MM-DD'))];
+
+  v_lines := v_lines || array['## state'];
+  v_cnt := 0;
+  for v_row in
+    select r.id, r.key, r.text from knowledge.current r
+    where r.project = recall.project and r.kind = 'state'
+    order by r.created_at desc limit v_cap
+  loop
+    v_lines := v_lines || array[('k#' || v_row.id || ' ' || v_row.key || ': ' || split_part(v_row.text, E'\n', 1))];
+    v_cnt := v_cnt + 1;
+  end loop;
+  if v_cnt = 0 then v_lines := v_lines || array['(none)']; end if;
+
+  v_lines := v_lines || array[('## decisions (last ' || v_decision_days || ' days)')];
+  v_cnt := 0;
+  for v_row in
+    select r.id, r.key, r.text from knowledge.current r
+    where r.project = recall.project and r.kind = 'decision'
+      and r.created_at >= now() - (v_decision_days || ' days')::interval
+    order by r.created_at desc limit v_cap
+  loop
+    v_lines := v_lines || array[('k#' || v_row.id || ' ' || v_row.key || ': ' || split_part(v_row.text, E'\n', 1))];
+    v_cnt := v_cnt + 1;
+  end loop;
+  if v_cnt = 0 then v_lines := v_lines || array['(none)']; end if;
+
+  v_lines := v_lines || array[('## lessons (last ' || v_lesson_days || ' days)')];
+  v_cnt := 0;
+  for v_row in
+    select r.id, r.key, r.text from knowledge.current r
+    where r.project = recall.project and r.kind = 'lesson'
+      and r.created_at >= now() - (v_lesson_days || ' days')::interval
+    order by r.created_at desc limit v_cap
+  loop
+    v_lines := v_lines || array[('k#' || v_row.id || ' ' || v_row.key || ': ' || split_part(v_row.text, E'\n', 1))];
+    v_cnt := v_cnt + 1;
+  end loop;
+  if v_cnt = 0 then v_lines := v_lines || array['(none)']; end if;
+
+  v_lines := v_lines || array['## pointers'];
+  v_cnt := 0;
+  for v_row in
+    select r.id, r.key, r.text from knowledge.current r
+    where r.project = recall.project and r.kind = 'pointer' and 'start' = any (r.tags)
+    order by r.created_at desc limit v_cap
+  loop
+    v_lines := v_lines || array[('k#' || v_row.id || ' ' || v_row.key || ': ' || split_part(v_row.text, E'\n', 1))];
+    v_cnt := v_cnt + 1;
+  end loop;
+  if v_cnt = 0 then v_lines := v_lines || array['(none)']; end if;
+
+  v_lines := v_lines || array['## datasets'];
+  v_cnt := 0;
+  if to_regclass('ds.catalog') is not null then
+    for v_row in
+      execute format('select table_name, summary from ds.catalog where project = %L order by created_at desc limit %s',
+        recall.project, v_cap)
+    loop
+      execute format('select count(*) from %I', v_row.table_name) into v_rowcount;
+      v_lines := v_lines || array[(v_row.table_name || ': ' || v_rowcount || ' rows, ' || split_part(v_row.summary, E'\n', 1))];
+      v_cnt := v_cnt + 1;
+    end loop;
+  end if;
+  if v_cnt = 0 then v_lines := v_lines || array['(none)']; end if;
+
+  v_lines := v_lines || array['## open'];
+  v_cnt := 0;
+  for v_row in
+    select r.id, r.key, r.text from knowledge.current r
+    where r.project = recall.project and 'open' = any (r.tags)
+    order by r.created_at desc limit v_cap
+  loop
+    v_lines := v_lines || array[('k#' || v_row.id || ' ' || v_row.key || ': ' || split_part(v_row.text, E'\n', 1))];
+    v_cnt := v_cnt + 1;
+  end loop;
+  if v_cnt = 0 then v_lines := v_lines || array['(none)']; end if;
+
+  return array_to_string(v_lines, E'\n');
+end;
+$$;
+
+create or replace function knowledge.export(project text, format text)
+returns text
+language plpgsql stable security invoker as $$
+#variable_conflict use_variable
+declare
+  v_result text;
+begin
+  if format = 'json' then
+    select jsonb_agg(jsonb_build_object(
+        'kind', c.kind, 'key', c.key, 'text', c.text, 'fields', c.fields,
+        'issue', c.issue, 'commit', c.commit, 'source', c.source, 'who', c.who,
+        'tags', c.tags, 'created_at', c.created_at
+      ) order by c.id)::text
+      into v_result
+      from knowledge.current c where c.project = export.project;
+    return coalesce(v_result, '[]');
+  elsif format = 'markdown' then
+    select string_agg(section, E'\n\n' order by kind) into v_result
+    from (
+      select c.kind,
+        '## ' || c.kind || E'\n' || string_agg(
+          '- ' || c.key || ': ' || split_part(c.text, E'\n', 1) ||
+          ' (k#' || c.id || ', ' || to_char(c.created_at, 'YYYY-MM-DD') || ')',
+          E'\n' order by c.id
+        ) as section
+      from knowledge.current c
+      where c.project = export.project
+      group by c.kind
+    ) s;
+    return coalesce(v_result, '');
+  else
+    raise exception 'knowledge.export: unknown format %', format;
+  end if;
+end;
+$$;
+
+create or replace function knowledge.import(project text, doc jsonb)
+returns int
+language plpgsql security invoker as $$
+#variable_conflict use_variable
+declare
+  v_elem jsonb;
+  v_count int := 0;
+begin
+  for v_elem in
+    select e.value from jsonb_array_elements(doc) with ordinality as e (value, ord)
+    order by e.ord
+  loop
+    perform knowledge.put(
+      project,
+      v_elem ->> 'kind',
+      v_elem ->> 'key',
+      v_elem ->> 'text',
+      coalesce(v_elem -> 'fields', '{}'::jsonb),
+      v_elem ->> 'issue',
+      v_elem ->> 'commit',
+      v_elem ->> 'source',
+      coalesce(v_elem ->> 'who', 'master'),
+      coalesce((select array_agg(t) from jsonb_array_elements_text(coalesce(v_elem -> 'tags', '[]'::jsonb)) t), '{}'::text[])
+    );
+    v_count := v_count + 1;
+  end loop;
+  return v_count;
+end;
+$$;
+
+-- grants: execute on every function, to master and agent; nothing to hook.
+grant execute on all functions in schema knowledge to master, agent;
