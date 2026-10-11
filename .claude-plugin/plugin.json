@@ -1,0 +1,6 @@
+{
+  "name": "knowledge",
+  "version": "0.1.0",
+  "description": "Three stores in one Postgres, SQL functions as the tools, any Postgres MCP server in front, shipped as a Claude Code plugin.",
+  "author": { "name": "Oleh Kutafin" }
+}
