@@ -234,21 +234,21 @@ begin
   v_lesson_days := coalesce(knowledge.setting(project, 'recall.lesson_days'), '14')::int;
   v_stale_days := coalesce(knowledge.setting(project, 'recall.stale_days'), '30')::int;
 
-  v_lines := v_lines || array[('# ' || project || ' recall ' || to_char(now(), 'YYYY-MM-DD'))];
+  v_lines := v_lines || array[(project || ', recall of ' || to_char(now(), 'YYYY-MM-DD'))];
 
-  v_lines := v_lines || array['## state'];
+  v_lines := v_lines || array['', 'State'];
   v_cnt := 0;
   for v_row in
     select r.id, r.key, r.text from knowledge.current r
     where r.project = recall.project and r.kind = 'state'
     order by r.created_at desc limit v_cap
   loop
-    v_lines := v_lines || array[('k#' || v_row.id || ' ' || v_row.key || ': ' || split_part(v_row.text, E'\n', 1))];
+    v_lines := v_lines || array[('- ' || v_row.key || ': ' || split_part(v_row.text, E'\n', 1))];
     v_cnt := v_cnt + 1;
   end loop;
-  if v_cnt = 0 then v_lines := v_lines || array['(none)']; end if;
+  if v_cnt = 0 then v_lines := v_lines || array['- none']; end if;
 
-  v_lines := v_lines || array[('## decisions (last ' || v_decision_days || ' days)')];
+  v_lines := v_lines || array['', ('Decisions of the last ' || v_decision_days || ' days')];
   v_cnt := 0;
   for v_row in
     select r.id, r.key, r.text from knowledge.current r
@@ -256,12 +256,12 @@ begin
       and r.created_at >= now() - (v_decision_days || ' days')::interval
     order by r.created_at desc limit v_cap
   loop
-    v_lines := v_lines || array[('k#' || v_row.id || ' ' || v_row.key || ': ' || split_part(v_row.text, E'\n', 1))];
+    v_lines := v_lines || array[('- ' || v_row.key || ': ' || split_part(v_row.text, E'\n', 1))];
     v_cnt := v_cnt + 1;
   end loop;
-  if v_cnt = 0 then v_lines := v_lines || array['(none)']; end if;
+  if v_cnt = 0 then v_lines := v_lines || array['- none']; end if;
 
-  v_lines := v_lines || array[('## lessons (last ' || v_lesson_days || ' days)')];
+  v_lines := v_lines || array['', ('Lessons of the last ' || v_lesson_days || ' days')];
   v_cnt := 0;
   for v_row in
     select r.id, r.key, r.text from knowledge.current r
@@ -269,24 +269,24 @@ begin
       and r.created_at >= now() - (v_lesson_days || ' days')::interval
     order by r.created_at desc limit v_cap
   loop
-    v_lines := v_lines || array[('k#' || v_row.id || ' ' || v_row.key || ': ' || split_part(v_row.text, E'\n', 1))];
+    v_lines := v_lines || array[('- ' || v_row.key || ': ' || split_part(v_row.text, E'\n', 1))];
     v_cnt := v_cnt + 1;
   end loop;
-  if v_cnt = 0 then v_lines := v_lines || array['(none)']; end if;
+  if v_cnt = 0 then v_lines := v_lines || array['- none']; end if;
 
-  v_lines := v_lines || array['## pointers'];
+  v_lines := v_lines || array['', 'Pointers'];
   v_cnt := 0;
   for v_row in
     select r.id, r.key, r.text from knowledge.current r
     where r.project = recall.project and r.kind = 'pointer' and 'start' = any (r.tags)
     order by r.created_at desc limit v_cap
   loop
-    v_lines := v_lines || array[('k#' || v_row.id || ' ' || v_row.key || ': ' || split_part(v_row.text, E'\n', 1))];
+    v_lines := v_lines || array[('- ' || v_row.key || ': ' || split_part(v_row.text, E'\n', 1))];
     v_cnt := v_cnt + 1;
   end loop;
-  if v_cnt = 0 then v_lines := v_lines || array['(none)']; end if;
+  if v_cnt = 0 then v_lines := v_lines || array['- none']; end if;
 
-  v_lines := v_lines || array['## datasets'];
+  v_lines := v_lines || array['', 'Datasets'];
   v_cnt := 0;
   if to_regclass('ds.catalog') is not null then
     for v_row in
@@ -294,23 +294,23 @@ begin
         recall.project, v_cap)
     loop
       execute format('select count(*) from %I', v_row.table_name) into v_rowcount;
-      v_lines := v_lines || array[(v_row.table_name || ': ' || v_rowcount || ' rows, ' || split_part(v_row.summary, E'\n', 1))];
+      v_lines := v_lines || array[('- ' || v_row.table_name || ': ' || v_rowcount || ' rows, ' || split_part(v_row.summary, E'\n', 1))];
       v_cnt := v_cnt + 1;
     end loop;
   end if;
-  if v_cnt = 0 then v_lines := v_lines || array['(none)']; end if;
+  if v_cnt = 0 then v_lines := v_lines || array['- none']; end if;
 
-  v_lines := v_lines || array['## open'];
+  v_lines := v_lines || array['', 'Open'];
   v_cnt := 0;
   for v_row in
     select r.id, r.key, r.text from knowledge.current r
     where r.project = recall.project and 'open' = any (r.tags)
     order by r.created_at desc limit v_cap
   loop
-    v_lines := v_lines || array[('k#' || v_row.id || ' ' || v_row.key || ': ' || split_part(v_row.text, E'\n', 1))];
+    v_lines := v_lines || array[('- ' || v_row.key || ': ' || split_part(v_row.text, E'\n', 1))];
     v_cnt := v_cnt + 1;
   end loop;
-  if v_cnt = 0 then v_lines := v_lines || array['(none)']; end if;
+  if v_cnt = 0 then v_lines := v_lines || array['- none']; end if;
 
   -- a trailing nudge: how many state/environment rows have aged past recall.stale_days,
   -- and the one call that lists them. Printed only when there are any, so a tended project
