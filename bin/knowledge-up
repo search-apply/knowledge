@@ -132,8 +132,10 @@ migrate() {
     echo "knowledge-up: store is not up; bring it up before --migrate" >&2
     exit 1
   fi
+  # Migrations run as postgres: it owns the schemas, so it can ALTER tables that master (DML only)
+  # and agent cannot, and it can record the schema_version.
   local current num applied=0 f
-  current="$(psql_as master -c "select coalesce(knowledge.setting('*','schema_version'),'0')")"
+  current="$(psql_as postgres -c "select coalesce(knowledge.setting('*','schema_version'),'0')")"
   current="${current:-0}"
   shopt -s nullglob
   for f in "$MIGRATIONS_DIR"/[0-9]*.sql; do
@@ -145,7 +147,7 @@ migrate() {
         cat "$f"
         printf "insert into knowledge.config (project, name, value) values ('*', 'schema_version', '%s') on conflict (project, name) do update set value = excluded.value;\n" "$num"
         echo 'commit;'
-      } | psql_as master >/dev/null
+      } | psql_as postgres >/dev/null
       applied=$((applied + 1))
       current="$num"
     fi
