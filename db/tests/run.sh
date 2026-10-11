@@ -68,6 +68,23 @@ fi
 passed=0
 failed=0
 
+# universality: no file under db, hooks, skills or bin may name the house or its product.
+# The pattern is built from fragments so the forbidden strings never appear in this file itself.
+h="search"
+unipattern="${h}napply|${h}\\.apply"
+unitargets=()
+for d in db hooks skills bin; do
+  [ -d "$ROOT/$d" ] && unitargets+=("$ROOT/$d")
+done
+if grep -rniE "$unipattern" "${unitargets[@]}" >/dev/null 2>&1; then
+  echo "FAIL universality"
+  grep -rniE "$unipattern" "${unitargets[@]}" 2>/dev/null
+  failed=$((failed + 1))
+else
+  echo "PASS universality"
+  passed=$((passed + 1))
+fi
+
 shopt -s nullglob
 for file in "$ROOT"/db/tests/*.sql; do
   output="$(docker exec -i "$CONTAINER" psql -U postgres -d knowledge -v ON_ERROR_STOP=1 -q < "$file" 2>&1)"
