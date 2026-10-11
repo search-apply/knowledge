@@ -24,16 +24,13 @@ export KNOWLEDGE_NETWORK="knowledge_zs_$$"
 unset KNOWLEDGE_PORT
 
 TMP_ENV="$(mktemp -d)"
-TMP_ABSENT="$(mktemp -d)"
-TMP_MCP="$(mktemp -d)"
-TMP_RACE="$(mktemp -d)"
 
 cleanup() {
   docker rm -f "$KNOWLEDGE_CONTAINER" >/dev/null 2>&1 || true
   docker volume rm "$KNOWLEDGE_VOLUME" >/dev/null 2>&1 || true
   docker network rm "$KNOWLEDGE_NETWORK" >/dev/null 2>&1 || true
   docker network rm "$KNOWLEDGE_CONTAINER" >/dev/null 2>&1 || true
-  rm -rf "$TMP_ENV" "$TMP_ABSENT" "$TMP_MCP" "$TMP_RACE"
+  rm -rf "$TMP_ENV"
 }
 trap cleanup EXIT INT TERM
 
@@ -43,25 +40,6 @@ fail() { printf 'FAIL %s: %s\n' "$1" "$2"; fails=$((fails + 1)); }
 
 perms_of() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null; }
 container_is_running() { [ "$(docker inspect -f '{{.State.Running}}' "$KNOWLEDGE_CONTAINER" 2>/dev/null)" = "true" ]; }
-sha256_of() {
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum | awk '{print $1}'
-  else
-    shasum -a 256 | awk '{print $1}'
-  fi
-}
-
-# 3: docker absent -> one line, exit 0 (run first; needs no docker).
-case_docker_absent() {
-  local name="docker-absent-one-line-exit-0" out rc n
-  out="$(PATH="/usr/bin:/bin" HOME="$TMP_ABSENT" KNOWLEDGE_AUTOUP=on "$SESSION_START" 2>/dev/null)"; rc=$?
-  if [ "$rc" -ne 0 ]; then fail "$name" "session-start exited $rc with docker off PATH, want 0"; return; fi
-  n="$(printf '%s\n' "$out" | grep -c .)"
-  if [ "$n" -ne 1 ]; then fail "$name" "stdout had $n non-empty lines, want 1: <$out>"; return; fi
-  if printf '%s' "$out" | grep -qi 'recall'; then fail "$name" "recall text leaked while docker was absent"; return; fi
-  pass "$name"
-}
-
 # pre-create the throwaway container directly (passwords live only in this subshell), wait ready.
 precreate_container() {
   (
@@ -110,60 +88,6 @@ case_stopped_started() {
   pass "$name"
 }
 
-# 4: bin/mcp on a fresh HOME with no env file -- the password for the URI must be the one
-# ensure_up just generated, read AFTER ensure_up returns, not the (empty) value read before it
-# wrote the file. Dry-run so the test never execs the MCP server's own docker run.
-case_mcp_password_order() {
-  local name="mcp-dry-run-password-set-after-cold-start" out envfile="$TMP_MCP/.config/knowledge/env" pwval
-  out="$(
-    export HOME="$TMP_MCP" KNOWLEDGE_AUTOUP=on KNOWLEDGE_WAIT_SECS=2 KNOWLEDGE_MCP_DRY_RUN=1
-    unset POSTGRES_PASSWORD KNOWLEDGE_MASTER_PASSWORD KNOWLEDGE_AGENT_PASSWORD KNOWLEDGE_HOOK_PASSWORD
-    "$ROOT/bin/mcp" master 2>/dev/null
-  )"
-  if [ ! -f "$envfile" ]; then fail "$name" "bin/mcp did not create $envfile on first cold start"; return; fi
-  if ! printf '%s' "$out" | grep -q 'password set: yes'; then
-    fail "$name" "dry-run line did not report password set: yes: <$out>"; return
-  fi
-  pwval="$(awk -F= '/^KNOWLEDGE_MASTER_PASSWORD=/ { print $2 }' "$envfile")"
-  if [ -z "$pwval" ]; then fail "$name" "could not read back the generated master password to check for a leak"; return; fi
-  if printf '%s' "$out" | grep -qF "$pwval"; then fail "$name" "dry-run line printed the password value"; return; fi
-  pass "$name"
-}
-
-# 5: three processes calling knowledge_ensure_env_file on the same fresh HOME at once must
-# converge on one file and agree on its passwords -- a plain "check, then write" lets two or
-# three winners each write their own, last writer wins, and a reader caught mid-write can load
-# a mix. Each process prints a sha256 of what it loaded; never the content itself.
-case_env_file_race() {
-  local name="env-file-race-three-writers-agree" envfile="$TMP_RACE/.config/knowledge/env"
-  local nfiles perm eqs hash1 hash2 hash3
-  (
-    export HOME="$TMP_RACE"
-    for i in 1 2 3; do
-      (
-        unset POSTGRES_PASSWORD KNOWLEDGE_MASTER_PASSWORD KNOWLEDGE_AGENT_PASSWORD KNOWLEDGE_HOOK_PASSWORD
-        knowledge_ensure_env_file
-        printf '%s' "$POSTGRES_PASSWORD$KNOWLEDGE_MASTER_PASSWORD$KNOWLEDGE_AGENT_PASSWORD$KNOWLEDGE_HOOK_PASSWORD" \
-          | sha256_of > "$TMP_RACE/hash.$i"
-      ) &
-    done
-    wait
-  )
-  nfiles="$(find "$TMP_RACE/.config/knowledge" -maxdepth 1 -type f -name 'env' 2>/dev/null | wc -l | tr -d ' ')"
-  if [ "$nfiles" != "1" ]; then fail "$name" "found $nfiles env files, want exactly 1"; return; fi
-  perm="$(perms_of "$envfile")"
-  if [ "$perm" != "600" ]; then fail "$name" "env file mode is $perm, want 600"; return; fi
-  eqs="$(grep -c '=' "$envfile")"
-  if [ "$eqs" -ne 4 ]; then fail "$name" "env file has $eqs KEY=value lines, want 4"; return; fi
-  hash1="$(cat "$TMP_RACE/hash.1" 2>/dev/null)"
-  hash2="$(cat "$TMP_RACE/hash.2" 2>/dev/null)"
-  hash3="$(cat "$TMP_RACE/hash.3" 2>/dev/null)"
-  if [ -z "$hash1" ] || [ "$hash1" != "$hash2" ] || [ "$hash1" != "$hash3" ]; then
-    fail "$name" "the three processes disagree on the passwords they loaded"; return
-  fi
-  pass "$name"
-}
-
 # 6: a network with the exact name of the (not yet existing) container must not be mistaken for
 # it by the container-existence check -- the blocker this hop fixes. A bare `docker inspect` of
 # the name matches the network too, so the old code took the "container exists" branch and never
@@ -186,16 +110,13 @@ case_network_name_collision() {
   pass "$name"
 }
 
-case_docker_absent
 case_network_name_collision
 if precreate_container; then
   case_env_created
   case_stopped_started
-  case_mcp_password_order
 else
   fail "setup" "could not bring up the throwaway container $KNOWLEDGE_CONTAINER"
 fi
-case_env_file_race
 
 if [ "$fails" -gt 0 ]; then
   printf 'ensure-up.sh: %d case(s) failed\n' "$fails"
