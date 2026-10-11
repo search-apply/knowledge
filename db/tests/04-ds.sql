@@ -155,5 +155,22 @@ begin
   exception when query_canceled then v_timed_out := true; end;
   v_elapsed := clock_timestamp() - v_t0;
   assert v_timed_out, 'a slow statement must raise query_canceled';
+  assert v_timed_out, 'a slow statement must raise query_canceled';
   assert v_elapsed < interval '6 seconds', format('the timeout must cancel before 6s; took %s', v_elapsed);
+end $$;
+
+-- break: ds.sql reads the '*' row_cap instead of the project's own override, so a project that
+-- lowers its cap still gets the default's under-cap pass-through.
+
+set role master;
+insert into knowledge.config (project, name, value) values ('t14-ds', 'ds.row_cap', '1');
+reset role;
+
+do $$
+declare
+  rec record;
+begin
+  select * into rec from ds.sql('t14-ds', 'select g from generate_series(1,2) g');
+  assert rec.saved_table like 'result_%', format('the project row_cap of 1 must send 2 rows over the cap; got saved_table %s', rec.saved_table);
+  assert rec.result = to_jsonb(ds.describe(rec.saved_table)), 'the over-cap result must carry the describe text';
 end $$;

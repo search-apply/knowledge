@@ -128,8 +128,8 @@ declare
   v_table text;
   v_desc text;
 begin
-  v_cap := coalesce(knowledge.setting('*', 'ds.row_cap'), '50')::int;
-  v_timeout := coalesce(knowledge.setting('*', 'ds.sql_timeout_ms'), '5000')::int;
+  v_cap := coalesce(knowledge.setting(project, 'ds.row_cap'), '50')::int;
+  v_timeout := coalesce(knowledge.setting(project, 'ds.sql_timeout_ms'), '5000')::int;
 
   begin
     set local transaction_read_only = on;
