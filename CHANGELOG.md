@@ -1,9 +1,11 @@
 # Changelog
 
-## 0.1.1 - unreleased
+## 0.2.0 - unreleased
 
-- The session no longer prints a recall block. The model reads the project's rows from `knowledge.current` at the start and tells the user in one sentence what is there. `knowledge.recall` and its settings are removed.
-- README rewritten for a first-time reader: what the session says, how the data is stored, how an agent uses it.
+- The plugin is now a Postgres MCP server plus two skills. The default tables (`knowledge.rows`, `knowledge.kinds`, the view `knowledge.current`), one write function (`knowledge.put`) and one search function stay. The `ds` schema is free for the model's own tables, with a shape described in the `data` skill.
+- Removed: the scratch store (wrapper hook, functions, table), the ds functions and catalog, the read wrappers (`get`, `list`, `about`, `stale`, `link`), the links and config tables, `export` and `import` (team sharing is two `\copy` lines in the README), the headings indexer and the `section` kind, `knowledge-up --migrate` and `--status`, `docs/agent-rules.md`, the hook database role.
+- The session no longer prints a recall block. The model reads `knowledge.current` at the start and tells the user in one sentence what is there.
+- README rewritten for a first-time reader.
 
 ## 0.1.0 - 2026-10-11
 
