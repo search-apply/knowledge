@@ -179,7 +179,7 @@ runaway query from a subagent stops.
 |---|---|---|
 | `postgres` | superuser, owns the schema | `knowledge-up` only, for dump and restore |
 | `master` | all on the `knowledge` schema | the main session's MCP entry (`knowledge`) |
-| `agent` | read the default tables, create tables of its own, five-second statement timeout | a subagent's MCP entry (`knowledge-agent`) |
+| `agent` | read the default tables, create tables of its own and register them in `datasets`, five-second statement timeout | a subagent's MCP entry (`knowledge-agent`) |
 
 A table made by one role is readable by the other.
 
