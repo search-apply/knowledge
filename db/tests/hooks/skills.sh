@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# skills.sh: the hook tests for the three skills (Should_CarryTheRules_When_SkillsRead).
-# For each skill: wc -l under 55, and a grep for every phrase the contract names finds it in the
-# named file. Each case prints PASS <name> or FAIL <name>: <reason>; the script exits 1 on any FAIL.
-# Run by db/tests/run.sh (cwd=repo root) or standalone from the repo root.
+# skills.sh: the hook tests for the two skills (Should_CarryTheRules_When_SkillsRead).
+# For each skill: wc -l at most 80, and a grep for every phrase the contract names finds it in
+# the named file. Each case prints PASS <name> or FAIL <name>: <reason>; the script exits 1 on
+# any FAIL. Run by db/tests/run.sh (cwd=repo root) or standalone from the repo root.
 set -uo pipefail
 
 ROOT="${CLAUDE_PLUGIN_ROOT:-$PWD}"
@@ -26,20 +26,15 @@ check_phrase() {
   if grep -qF -- "$phrase" "$file"; then pass "phrase $1 <$phrase>"; else fail "phrase $1 <$phrase>" "not found"; fi
 }
 
-check_lines skills/knowledge/SKILL.md 59
-check_lines skills/datasets/SKILL.md 54
-check_lines skills/scratch/SKILL.md 54
+check_lines skills/knowledge/SKILL.md 80
+check_lines skills/data/SKILL.md 80
 
-for p in "one sentence" search get about put supersede link add_kind "three lines" "main session"; do
+for p in "one sentence" "knowledge.put" "knowledge.search" "knowledge.current" "three lines" "main session"; do
   check_phrase skills/knowledge/SKILL.md "$p"
 done
 
-for p in describe ds.sql LIMIT "docker exec -i" '\copy'; do
-  check_phrase skills/datasets/SKILL.md "$p"
-done
-
-for p in scratch.read scratch.grep; do
-  check_phrase skills/scratch/SKILL.md "$p"
+for p in "comment on table" "created_at" "ds.<project>_<topic>" "Always a limit" "five-second statement timeout"; do
+  check_phrase skills/data/SKILL.md "$p"
 done
 
 if [ "$fails" -gt 0 ]; then

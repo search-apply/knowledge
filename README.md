@@ -1,11 +1,9 @@
 # knowledge
 
-A memory store for coding agents, shipped as a Claude Code plugin. One Postgres container on your
-machine holds three things: the knowledge your agent should keep, the long command outputs that
-would otherwise flood its context, and the data tables it builds while working. The agent reaches
-all of it through plain SQL functions, behind a standard Postgres MCP server. The plugin starts its
-own container, so after installing it you only tell your model to use it. Nothing leaves your
-machine.
+A memory for coding agents: one Postgres container on your machine, a standard Postgres MCP
+server in front of it, and two short skills that teach the model how to store what it learns and
+how to query it back. Shipped as a Claude Code plugin. The plugin starts its own container, so
+after installing it you only tell your model to use it. Nothing leaves your machine.
 
 ## What a session says at start
 
@@ -28,8 +26,7 @@ Nothing is printed by the plugin itself. The model reads the store and speaks.
 ## Requirements
 
 - Docker, running. Docker Desktop on macOS, or the Docker engine on Linux.
-- macOS or Linux, with `bash` and `jq` on the PATH. Without `jq` the command-output wrapper stays
-  off and everything else works.
+- macOS or Linux, with `bash` and `jq` on the PATH.
 - Windows only through WSL, untested.
 
 That is all. The plugin pulls the two images it needs on first use.
@@ -46,15 +43,15 @@ claude plugin install knowledge@knowledge
 Then open Claude Code in any repository. The store comes up on its own at the start of the session.
 On that first start the plugin, in the background:
 
-- writes `$HOME/.config/knowledge/env` with four random passwords, readable only by you
+- writes `$HOME/.config/knowledge/env` with random passwords, readable only by you
 - creates a private docker network and the `knowledge` container on it, from `postgres:18`, with a
   named volume for the data
 - pulls the Postgres MCP image
 
 The first start takes a few seconds. That first session prints one line saying the store is coming
-up and will be used from the next command on. Every session after that opens with the sentence shown
-above, for your project. If Docker is not running, the plugin says so once and stays out of the
-way.
+up and will be used from the next command on. Every session after that opens with the sentence
+shown above, for your project. If Docker is not running, the plugin says so once and stays out of
+the way.
 
 Telling the model
 
@@ -64,28 +61,15 @@ use the knowledge plugin
 
 starts nothing. It only tells the model to lean on the store that is already there.
 
-## What gets stored
+## What is in the database
 
-The store has eleven built-in kinds of row. A project can add its own with `add_kind`.
+Two schemas. `knowledge` holds the default tables, created once when the container is made.
+`ds` is empty and belongs to the model, for any table it wants to create while working.
 
-- `decision`, a ruling with its why and the options it chose among
-- `fact`, a verified fact, with when and how it was verified
-- `state`, a current value, like what is running or which release is in progress
-- `pointer`, a place worth reading
-- `lesson`, a lesson learned from an incident
-- `finding`, a finding from one piece of work
-- `section`, a markdown heading indexed from a repo, so docs become searchable
-- `incident`, an incident record with date, what happened, cause and fix
-- `environment`, a fact about the running environment
-- `recipe`, a recipe with its steps
-- `term`, a defined term
+### The default tables
 
-### How the data is stored
-
-Three tables carry everything. Agents touch them only through the SQL functions.
-
-`knowledge.rows` holds the curated memory, one row per item. Writing the same project, kind and key
-again adds a new row and marks the old one as superseded, so history stays and the view
+`knowledge.rows` holds the memory, one row per item. Writing the same project, kind and key again
+adds a new row and marks the old one as superseded, so history stays and the view
 `knowledge.current` shows the latest. The text is at most three lines. The fields column carries
 what the kind requires. Rows of the bundled `demo` project:
 
@@ -101,92 +85,68 @@ The other columns are `project`, `issue` and `commit` (where the row came from),
 `tags` and `created_at`.
 
 `knowledge.kinds` is the vocabulary: a name, a description and the fields a row of that kind must
-carry. The eleven built-in kinds are listed above. `add_kind('convention', 'a house convention',
-'["rule"]')` adds one.
+carry. Ten kinds are built in. One insert adds another.
 
-| name | fields |
-|---|---|
-| decision | why, options, who_ruled |
-| lesson | incident, rule |
-| state | value |
-| pointer | path, what |
-| fact | verified_on, how |
+| kind | fields | use it for |
+|---|---|---|
+| decision | why, options, who_ruled | a ruling and why it was made |
+| fact | verified_on, how | a verified fact |
+| state | value | what is running, what is in progress |
+| pointer | path, what | a place worth reading |
+| lesson | incident, rule | what an incident taught |
+| finding | task, hop, role | a finding from one piece of work |
+| incident | date, what, cause, fix | an incident record |
+| environment | name, value | a fact about the running environment |
+| recipe | steps, pointer | how to do something |
+| term | definition | a defined term |
 
-`scratch.outputs` holds command output that was too long for the context. The hook stores the
-whole output, hands the agent a five-line digest, and the agent reads the rest with `scratch.read`
-or `scratch.grep`. Rows expire after seven days.
+One function, `knowledge.put`, writes a row: it checks the kind's fields, inserts the row and marks
+the previous row of that key as superseded. One function, `knowledge.search`, finds rows by words.
+Everything else is a plain query, and the skill carries the ones that matter.
 
-| id | session | command | lines | expires_at |
-|---|---|---|---|---|
-| 12 | 7f3a... | docker logs api | 4812 | 2026-10-18 |
+### The queries the model uses
 
-`ds.catalog` is the index of the agent's data tables. The data itself is a plain table in the `ds`
-schema, one per dataset, registered here so that `ds.list` shows it.
+- At session start: `select kind, key, text, created_at from knowledge.current where project = '<project>' order by created_at desc limit 30`
+- When something is decided or learned: `select knowledge.put('<project>', 'decision', 'billing-cancel', 'the subscription ends at cancel_at', '{"why": "...", "options": "...", "who_ruled": "operator"}', issue => '#12')`
+- By words: `select * from knowledge.search('<project>', 'webhook cancel')`
+- By kind or by issue: `select key, text from knowledge.current where project = '<project>' and kind = 'decision'`,
+  `... and issue = '#12'`
+- The history of a key: `select text, created_at from knowledge.rows where project = '<project>' and key = 'billing-cancel' order by created_at`
 
-| table_name | project | summary | who |
-|---|---|---|---|
-| demo_titles | demo | seven sample title verdicts for the demo project | master |
+### The model's own tables
 
-`knowledge.config` holds the few settings: how long scratch rows live, the digest size, the row
-cap and timeout for dataset queries. Each has a `*` default and can be set per
-project.
+The `ds` schema is where the model keeps rows of data a piece of work produces, like research
+results or measurements, instead of pasting them into the context. There are no fixed scripts for
+it, only a shape, so the tables line up and the next session can find them:
 
-### How an agent uses them
+- the name is `ds.<project>_<topic>`
+- every table has a `created_at` column and a `comment on table` saying what it holds and where it
+  came from
+- every read has a `limit`, and a reply carries table names and counts, never the rows
+- the map of what exists is one query over `pg_class` and `obj_description`, in the `data` skill
 
-- At session start the model reads the project's rows from `knowledge.current` and tells you in one
-  sentence what is there, as shown at the top of this file.
-- Before working on an issue: `select * from knowledge.about('<project>', '#12')` returns every row
-  linked to that issue and its parents. `knowledge.search('<project>', 'webhook cancel')` searches
-  by words.
-- When something is decided or learned: `select knowledge.put('<project>', 'decision',
-  'billing-cancel', 'the subscription ends at cancel_at', '{"why": "...", "options": "...",
-  "who_ruled": "operator"}', issue => '#12')`. The same key again supersedes the old row.
-- A long command output: the hook stores it and hands back a five-line digest with its id.
-  `select scratch.read(<id>)` or `scratch.grep(<id>, 'error')` reads the rest. The command is never
-  run again just to see its output.
-- Rows of data from research: `create table ds.titles as ...`, then
-  `ds.register('<project>', 'titles', 'what it holds')`. Others query it with
-  `ds.sql('<project>', 'select ... from ds.titles')`, which is read-only, capped and has a timeout.
-- `bin/index-headings <project> docs/*.md` turns a repo's markdown headings into `section` rows, so
-  the agent can search the docs.
+The `agent` role has a five-second statement timeout, so a runaway query from a subagent stops.
 
 ## How it works
 
-Three stores share one Postgres database.
-
-- `knowledge` is curated and kept for years. Short rows of the kinds above, at most three lines
-  each. A new write on the same key supersedes the old one. Nothing is deleted. `search`, `get` and
-  `list` read rows back, and the view `knowledge.current` holds the latest row of every key.
-- `scratch` is automatic and kept for days. A hook wraps every Bash command. When the output runs
-  over a threshold (40 lines by default) the output is stored and the context gets a short digest
-  instead: an id, a line count, the first and the last lines. The agent reads it back with
-  `scratch.read` or `scratch.grep` rather than running the command again. Rows expire after seven
-  days.
-- `ds` holds datasets an agent builds: plain tables, queried read-only through `ds.sql` with a row
-  cap and a timeout, and summarised rather than pasted.
-
-Two MCP entries sit in front: `knowledge` (read and write) for the main session, and
-`knowledge-agent` (read only) for spawned subagents. Three skills teach an agent to use the stores.
-A client that cannot load skills gets the same guidance from `docs/agent-rules.md`.
-
-Because the hook is automatic, here is exactly what it does:
-
-- Every Bash command's output, when it runs over the threshold, is kept in your local container for
-  seven days. Set `KNOWLEDGE_SCRATCH=off` for a session that must see raw output inline, like a
-  live log you are watching.
-- That includes any secret a command happens to print. It is stored like any other output. It never
-  leaves your machine, but treat the scratch store as holding whatever your commands printed.
-- Nothing is sent anywhere. The store is a container on your machine. There is no telemetry and no
-  network traffic from the plugin beyond pulling the two docker images.
+- One container, `postgres:18`, on a private docker network, with a named volume for the data.
+- Two MCP entries: `knowledge` (read and write) for the main session, and `knowledge-agent` (read
+  only on `knowledge`, read and write on `ds`) for spawned subagents. Both run the standard
+  `crystaldba/postgres-mcp` image. The model talks to the database with its `execute_sql` tool.
+- Two skills: `knowledge` (the default tables, when to store what, the queries) and `data` (the
+  shape of the model's own tables).
+- Two hooks: at session start the store is brought up and a dump is taken once a day. Before any
+  Bash command, a guard refuses the docker commands that would remove the volume.
+- Nothing is sent anywhere. There is no telemetry and no network traffic from the plugin beyond
+  pulling the two docker images.
 
 ## Database access
 
 | role | grants | used by |
 |---|---|---|
-| `postgres` | superuser, owns the schemas | `knowledge-up` only, for dump, restore and migrate |
-| `master` | all on `knowledge` and `ds`, read `scratch` | the main session's MCP entry (`knowledge`) |
-| `agent` | read `knowledge` and `scratch`, all on `ds` (including create table) | a subagent's MCP entry (`knowledge-agent`) |
-| `hook` | insert on `scratch` only | the Bash hook |
+| `postgres` | superuser, owns the schemas | `knowledge-up` only, for dump and restore |
+| `master` | all on `knowledge` and `ds` | the main session's MCP entry (`knowledge`) |
+| `agent` | read `knowledge`, all on `ds`, five-second statement timeout | a subagent's MCP entry (`knowledge-agent`) |
 
 The passwords live only in `$HOME/.config/knowledge/env`, readable only by you, generated on the
 first start and never written into any config file. The MCP wrapper `bin/mcp` reads them and builds
@@ -209,38 +169,6 @@ MCP servers from `/mcp`:
 docker exec -it knowledge psql -U postgres -d knowledge -c "alter role master password '<new>'"
 ```
 
-## Measured token savings
-
-Measured on one machine. Tokens are characters divided by 4. The command behind every number is
-listed below. The store replaces a large paste with a small read.
-
-| case | inline tokens | with the store | saving |
-|---|---|---|---|
-| orientation at session start (newest handoff plus MEMORY.md, against the stored rows) | 6,449 | 125 | 6,324 |
-| `git log`, 400 lines, against its digest | 4,440 | 118 | 4,322 |
-| `find / -name '*.sql'`, 352 lines, against its digest | 11,367 | 320 | 11,047 |
-| `db/tests/run.sh`, 13 lines, under the threshold | 286 | 286 | 0 |
-| 2000 data rows pasted, against one `ds.sql` summary | 10,956 | 447 | 10,509 |
-
-The 125 for orientation is the twelve rows of the small `demo` project read back as text. A real
-project's rows will run to a few hundred tokens. Read 125 as the shape of the saving, not a fixed
-promise.
-
-How each number was taken:
-
-- Orientation: `wc -c` of the newest file in the Playbook handoffs folder (4,191 characters) plus
-  `wc -c` of `MEMORY.md` (21,607 characters) gives 25,798 characters inline. Against that, the
-  `demo` project's rows read back as text on a seeded throwaway container give 503 characters.
-- Scratch: each command's real output was stored and its digest read back. `git log | head -400`
-  is 17,762 characters, its digest 473. `find / -name '*.sql' 2>/dev/null | head -2000` is 45,470
-  characters (352 files found), its digest 1,283. `db/tests/run.sh` prints 1,144 characters in 13
-  lines, under the 40-line threshold, so it passes through unchanged and nothing is stored. One
-  targeted read-back of the find output, `select * from scratch.grep(<id>, '02-knowledge')`, costs
-  494 tokens (1,976 characters), still a fraction of the 11,367 inline.
-- Dataset: 2000 rows inserted into a `ds` table and read back as text are 43,824 characters.
-  One `select ... from ds.sql('demo', 'select company, count(*) from ds.meas group by 1')` is
-  1,790 characters.
-
 ## Other clients
 
 Any MCP client can point at the store. Each entry sets `DATABASE_URI` for the role it should use.
@@ -258,48 +186,33 @@ take the same `command`, `args` and `env` shape under their own config key. A cl
 to the docker network reaches the container through a published port: set `KNOWLEDGE_PORT` and use
 `postgresql://agent:<AGENT_PASSWORD>@localhost:$KNOWLEDGE_PORT/knowledge`.
 
-A client that cannot load the plugin's skills should be given the rules in `docs/agent-rules.md`.
-They say the same things the skills do.
+A client that cannot load the plugin's skills can be given the two skill files as plain text. They
+are in `skills/knowledge/SKILL.md` and `skills/data/SKILL.md`.
 
-Subagents, from this plugin or any other, should get only the read-only `knowledge-agent` entry,
-never the writable one. Its tools appear under the prefix `mcp__plugin_knowledge_knowledge-agent__`.
-The writable `knowledge` server's tools appear under `mcp__plugin_knowledge_knowledge__`. Allow a
-subagent only the first, so that only the main session writes.
+Subagents, from this plugin or any other, should get only the `knowledge-agent` entry, never the
+writable one. Its tools appear under the prefix `mcp__plugin_knowledge_knowledge-agent__`. The
+writable `knowledge` server's tools appear under `mcp__plugin_knowledge_knowledge__`. Allow a
+subagent only the first, so that only the main session writes memory.
 
 ## Team use
 
-The store is per machine. To share knowledge, export a project and import it on the other machine.
-
-Export:
-
-```
-docker exec -i knowledge psql -U master -d knowledge -qAt \
-  -c "select knowledge.export('<project>', 'json')" > knowledge-<project>.json
-```
-
-Commit that file. On the other machine, import it as `master`. The file is read on the host and
-passed in as a psql variable, so no superuser and no server-side file access is needed:
+The store is per machine. To share a project's memory, export its current rows to a file, commit
+the file, and load it on the other machine:
 
 ```
-docker exec -i knowledge psql -U master -d knowledge -v doc="$(cat knowledge-<project>.json)" <<'SQL'
-select knowledge.import('<project>', :'doc'::jsonb);
-SQL
+docker exec -i knowledge psql -U master -d knowledge -c "\copy (select project, kind, key, text, fields, issue, commit, source, who, tags, created_at from knowledge.current where project = '<project>' order by created_at) to stdout csv header" > knowledge-<project>.csv
+
+docker exec -i knowledge psql -U master -d knowledge -c "\copy knowledge.rows (project, kind, key, text, fields, issue, commit, source, who, tags, created_at) from stdin csv header" < knowledge-<project>.csv
 ```
 
-The statement has to come in on stdin, as above, because psql expands `:'doc'` only there and not
-with `-c`. Import replays each row in order, so exporting the same project again gives the same
-file.
+Loading the same file twice is refused by the unique key on project, kind, key and created_at.
 
-## Backup, restore, upgrade, uninstall
+## Backup, restore, uninstall
 
 - Backup: `bin/knowledge-up --dump` writes a `pg_dump` into `$HOME/.knowledge/dumps`. It keeps the
   newest 14 dumps plus the first dump of every month. The session-start hook takes one dump a day
   on its own.
 - Restore: `bin/knowledge-up --restore "$HOME/.knowledge/dumps/knowledge-YYYYMMDD-HHMM.dump"`.
-- Status: `bin/knowledge-up --status` prints whether the store is up, the volume size, the rows per
-  kind, the scratch rows, the ds tables and the age of the newest dump.
-- Upgrade: pull the new plugin, then run `bin/knowledge-up --migrate` to apply any new schema
-  migrations (see `db/migrations/README.md`). Version 0.1.0 ships none.
 - Uninstall: `bin/knowledge-up --down` stops and removes the container. The data volume is kept. To
   delete the data too, remove the volume yourself with `docker volume rm knowledge_data`. That is
   the one command the volume-guard hook blocks inside a session, so run it from a terminal.
@@ -309,11 +222,9 @@ file.
 - Docker is not running: the session prints one line saying docker is not available and the store
   is skipped, then goes on without it. Start Docker and open a new session.
 - The store is still coming up: the very first start runs `initdb`, which takes a few seconds. The
-  session says so and uses the store from the next command on. `bin/knowledge-up --status` shows
-  the progress.
+  session says so and uses the store from the next command on.
 - `/mcp` shows `knowledge` as failed: the MCP server started before the database was ready. It keeps
-  retrying and does not exit, so reconnect from `/mcp`, or open a new session, once `--status`
-  reports up.
+  retrying and does not exit, so reconnect from `/mcp`, or open a new session.
 - What the background start is doing: its log is `$HOME/.knowledge/init.log`. The container
   creation, the image pulls and any error from them land there.
 
@@ -326,8 +237,7 @@ file.
 | `KNOWLEDGE_PORT` | unset | set it to publish the database on `127.0.0.1:$KNOWLEDGE_PORT` |
 | `KNOWLEDGE_PROJECT` | the working directory's name | the `project` column of every row |
 | `KNOWLEDGE_DUMP_DIR` | `$HOME/.knowledge/dumps` | where the daily `pg_dump` goes |
-| `KNOWLEDGE_SCRATCH_THRESHOLD`, `KNOWLEDGE_SCRATCH` | `40`, `on` | lines of output before it is stored, and `off` to disable the wrapper |
-| `KNOWLEDGE_WAIT_SECS` | `5` in the hooks, `30` in `bin/mcp` | seconds to wait for the store before giving up and going on without it |
+| `KNOWLEDGE_WAIT_SECS` | `5` in the hooks, `30` in `bin/mcp` | seconds to wait for the store before going on without it |
 | `KNOWLEDGE_AUTOUP` | `on` | `off` to manage the store yourself, so the plugin never creates or starts it |
 
 ## Development
@@ -345,7 +255,7 @@ To look at the bundled `demo` project yourself:
 ```
 docker run -d --name knowledge-try \
   -e POSTGRES_PASSWORD=x -e POSTGRES_DB=knowledge \
-  -e KNOWLEDGE_MASTER_PASSWORD=x -e KNOWLEDGE_AGENT_PASSWORD=x -e KNOWLEDGE_HOOK_PASSWORD=x \
+  -e KNOWLEDGE_MASTER_PASSWORD=x -e KNOWLEDGE_AGENT_PASSWORD=x \
   -v "$PWD/db/init:/docker-entrypoint-initdb.d:ro" postgres:18
 docker exec -i knowledge-try psql -U postgres -d knowledge < db/seed/demo.sql
 docker exec -i knowledge-try psql -U agent -d knowledge -c "select kind, key, text from knowledge.current where project = 'demo'"
@@ -353,6 +263,6 @@ docker rm -f knowledge-try
 ```
 
 A SQL test file is a sequence of `do $$ ... end $$` blocks with asserts. Each block has a
-`-- break:` comment above it naming what a failing assert means. A hook test feeds the hook its
-real input and reads the result back through `docker exec psql`. See `db/tests/hooks/scratch.sh`
-and `db/tests/hooks/ensure-up.sh` for the shape.
+`-- break:` comment above it naming what a failing assert means. A hook test runs the shipped
+script and reads the result back through `docker exec psql`. See `db/tests/hooks/ensure-up.sh`
+for the shape.

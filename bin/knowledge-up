@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# knowledge-up [--dump|--restore <file>|--status|--down|--migrate]: manages the knowledge store
-# container.
+# knowledge-up [--dump|--restore <file>|--down]: manages the knowledge store container.
 # Plain run: creates the private network when missing, then the container with the named volume at
 # the image's data mount point (/var/lib/postgresql), restart policy unless-stopped, db/init
 # mounted read-only, no host port unless KNOWLEDGE_PORT is set. A present-but-stopped container is
@@ -9,10 +8,7 @@
 # (default $HOME/.knowledge/dumps), named knowledge-<YYYYMMDD-HHMM>.dump, then prunes old dumps
 # (keeps the newest 14 and the first dump of every month).
 # --restore <file>: pg_restore through docker exec -i, from the given dump file.
-# --status: up/down/missing, volume size, current rows per kind, scratch rows, ds tables, dump age.
 # --down: stop and remove the container; the volume is kept.
-# --migrate: apply db/migrations/NNN-*.sql whose number is above the recorded schema_version, each
-# in one transaction, recording the new version. 0.1.0 ships no migration (the first schema).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -25,11 +21,10 @@ NETWORK="${KNOWLEDGE_NETWORK:-knowledge}"
 DUMP_DIR="${KNOWLEDGE_DUMP_DIR:-$HOME/.knowledge/dumps}"
 IMAGE="${KNOWLEDGE_IMAGE:-postgres:18}"
 MCP_IMAGE="${KNOWLEDGE_MCP_IMAGE:-crystaldba/postgres-mcp}"
-MIGRATIONS_DIR="${KNOWLEDGE_MIGRATIONS_DIR:-$ROOT/db/migrations}"
 
 require_passwords() {
   local v
-  for v in POSTGRES_PASSWORD KNOWLEDGE_MASTER_PASSWORD KNOWLEDGE_AGENT_PASSWORD KNOWLEDGE_HOOK_PASSWORD; do
+  for v in POSTGRES_PASSWORD KNOWLEDGE_MASTER_PASSWORD KNOWLEDGE_AGENT_PASSWORD; do
     if [ -z "${!v:-}" ]; then
       echo "knowledge-up: $v is not set" >&2
       exit 1
@@ -69,7 +64,6 @@ up() {
     -e POSTGRES_DB=knowledge \
     -e KNOWLEDGE_MASTER_PASSWORD \
     -e KNOWLEDGE_AGENT_PASSWORD \
-    -e KNOWLEDGE_HOOK_PASSWORD \
     -v "${VOLUME}:/var/lib/postgresql" \
     -v "$ROOT/db/init:/docker-entrypoint-initdb.d:ro" \
     ${port_args[@]+"${port_args[@]}"} \
@@ -128,74 +122,10 @@ down() {
   echo "knowledge-up: removed container $CONTAINER; volume $VOLUME kept"
 }
 
-migrate() {
-  if ! store_up 2>/dev/null; then
-    echo "knowledge-up: store is not up; bring it up before --migrate" >&2
-    exit 1
-  fi
-  # Migrations run as postgres: it owns the schemas, so it can ALTER tables that master (DML only)
-  # and agent cannot, and it can record the schema_version.
-  local current num applied=0 f
-  current="$(psql_as postgres -c "select coalesce(knowledge.setting('*','schema_version'),'0')")"
-  current="${current:-0}"
-  shopt -s nullglob
-  for f in "$MIGRATIONS_DIR"/[0-9]*.sql; do
-    num="$(basename "$f" | sed -E 's/^([0-9]+).*/\1/')"
-    if [ "$((10#$num))" -gt "$((10#$current))" ]; then
-      echo "knowledge-up: applying migration $num ($(basename "$f"))"
-      {
-        echo 'begin;'
-        cat "$f"
-        printf "insert into knowledge.config (project, name, value) values ('*', 'schema_version', '%s') on conflict (project, name) do update set value = excluded.value;\n" "$num"
-        echo 'commit;'
-      } | psql_as postgres >/dev/null
-      applied=$((applied + 1))
-      current="$num"
-    fi
-  done
-  shopt -u nullglob
-  if [ "$applied" -eq 0 ]; then
-    echo "knowledge-up: no migrations to apply (at version $current)"
-  else
-    echo "knowledge-up: applied $applied migration(s); now at version $current"
-  fi
-}
-
-status() {
-  if ! docker container inspect "$CONTAINER" >/dev/null 2>&1; then
-    echo "status: missing (no container $CONTAINER)"
-    echo "dump: newest is $(newest_dump_age_hours)h old (999 means none)"
-    return 0
-  fi
-  if container_running && store_up 2>/dev/null; then
-    echo "status: up ($CONTAINER, image $IMAGE)"
-  elif container_running; then
-    echo "status: starting ($CONTAINER)"
-  else
-    echo "status: down ($CONTAINER stopped)"
-  fi
-
-  local vsize
-  vsize="$(docker system df -v 2>/dev/null | awk -v v="$VOLUME" '$1 == v { print $(NF) }' | head -n1)"
-  echo "volume: ${VOLUME} ${vsize:-unknown}"
-
-  if store_up 2>/dev/null; then
-    echo "knowledge rows per kind:"
-    psql_as master -c "select '  ' || kind || ': ' || count(*) from knowledge.current group by kind order by kind" 2>/dev/null || true
-    echo "scratch rows: $(psql_as master -c 'select count(*) from scratch.outputs' 2>/dev/null || echo '?')"
-    echo "ds tables: $(psql_as master -c 'select count(*) from ds.catalog' 2>/dev/null || echo '?')"
-    echo "schema_version: $(psql_as master -c "select coalesce(knowledge.setting('*','schema_version'),'0')" 2>/dev/null || echo '?')"
-  fi
-  echo "mcp image: ${MCP_IMAGE} ($(docker image inspect "$MCP_IMAGE" >/dev/null 2>&1 && echo pulled || echo 'not pulled'))"
-  echo "dump: newest is $(newest_dump_age_hours)h old (999 means none)"
-}
-
 case "${1:-}" in
   --dump) dump ;;
   --restore) restore "${2:-}" ;;
-  --status) status ;;
   --down) down ;;
-  --migrate) migrate ;;
   "") up ;;
   *) echo "knowledge-up: unknown argument $1" >&2; exit 1 ;;
 esac

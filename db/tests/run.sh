@@ -30,7 +30,6 @@ docker run -d --name "$CONTAINER" \
   -e POSTGRES_PASSWORD=test \
   -e KNOWLEDGE_MASTER_PASSWORD=test \
   -e KNOWLEDGE_AGENT_PASSWORD=test \
-  -e KNOWLEDGE_HOOK_PASSWORD=test \
   -v "$ROOT/db/init":/docker-entrypoint-initdb.d:ro \
   postgres:18 >/dev/null
 
