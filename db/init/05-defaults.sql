@@ -14,9 +14,6 @@ insert into knowledge.kinds (name, description, fields) values
   ('term', 'a defined term', '["definition"]'::jsonb);
 
 insert into knowledge.config (project, name, value) values
-  ('*', 'recall.decision_days', '30'),
-  ('*', 'recall.lesson_days', '14'),
-  ('*', 'recall.section_cap', '10'),
   ('*', 'scratch.retention_days', '7'),
   ('*', 'scratch.digest_lines', '5'),
   ('*', 'scratch.read_cap', '200'),
