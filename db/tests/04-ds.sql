@@ -174,3 +174,27 @@ begin
   assert rec.saved_table like 'result_%', format('the project row_cap of 1 must send 2 rows over the cap; got saved_table %s', rec.saved_table);
   assert rec.result = to_jsonb(ds.describe(rec.saved_table)), 'the over-cap result must carry the describe text';
 end $$;
+
+-- Should_ListStaleTables_When_StaleCalled
+
+-- A never-scanned table is stale; a table read just now is not. The read and the stats flush are
+-- their own top-level statements (each its own transaction) so the scan is visible to the block
+-- below; both tables are empty, so autovacuum never touches the cold one and its scan times stay
+-- null. last_idx_scan is null for both (no indexes), so staleness turns on last_seq_scan alone.
+-- break: stale omits a never-scanned table, or still lists a table that was just read.
+create table ds.t_stale_hot (id int);
+insert into ds.t_stale_hot values (1);
+select ds.register('t-dsstale', 't_stale_hot', 'a table read just now');
+create table ds.t_stale_cold (id int);
+select ds.register('t-dsstale', 't_stale_cold', 'a table never read');
+
+select count(*) from ds.t_stale_hot;
+select pg_stat_force_next_flush();
+
+do $$
+begin
+  assert exists (select 1 from ds.stale('t-dsstale', 1) s where s.table_name = 't_stale_cold'),
+    'a never-scanned table (both scan times null) is stale';
+  assert not exists (select 1 from ds.stale('t-dsstale', 1) s where s.table_name = 't_stale_hot'),
+    'a table read within the day window is not stale';
+end $$;

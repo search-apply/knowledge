@@ -166,6 +166,23 @@ begin
 end;
 $$;
 
+-- stale(project, days): catalogued tables that have not been read in days -- both the last
+-- sequential scan and the last index scan are null (never scanned) or older than days.
+-- last_seq_scan and last_idx_scan come from pg_stat_all_tables (PostgreSQL 16+); a null is
+-- treated as the epoch, so a never-scanned table always counts as stale.
+create or replace function ds.stale(project text, days int)
+returns table (table_name text, last_seq_scan timestamptz, last_idx_scan timestamptz, summary text)
+language sql stable security invoker as $$
+  select c.table_name, s.last_seq_scan, s.last_idx_scan, c.summary
+  from ds.catalog c
+  left join pg_stat_all_tables s
+    on s.schemaname = 'ds' and s.relname = c.table_name
+  where c.project = stale.project
+    and coalesce(s.last_seq_scan, 'epoch'::timestamptz) < now() - make_interval(days => stale.days)
+    and coalesce(s.last_idx_scan, 'epoch'::timestamptz) < now() - make_interval(days => stale.days)
+  order by c.created_at;
+$$;
+
 -- grants: master all on ds.catalog and ds.result_seq; agent all on ds.catalog plus usage on
 -- ds.result_seq; execute on every function to master and agent; nothing to hook.
 grant all on ds.catalog to master, agent;

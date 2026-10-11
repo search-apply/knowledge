@@ -342,3 +342,42 @@ begin
   ds_section := substring(r from p_ds for p_open - p_ds);
   assert position('demo_titles: 7 rows' in ds_section) > 0, 'recall datasets section must show demo_titles: 7 rows';
 end $$;
+
+-- Should_ListStaleRows_When_StaleCalled (and the recall stale nudge)
+
+-- break: stale returns a fresh row, omits an aged row, ignores the environment kind, counts a
+-- superseded row, or recall shows the trailing nudge at the wrong time.
+do $$
+declare
+  id_fresh bigint;
+  id_old_state bigint;
+  id_old_env bigint;
+  r text;
+  stale_keys text[];
+begin
+  id_fresh := knowledge.put('t-stale', 'state', 'fresh', 'just set', '{"value":"v"}'::jsonb);
+  id_old_state := knowledge.put('t-stale', 'state', 'old', 'set long ago', '{"value":"v"}'::jsonb);
+  update knowledge.rows set created_at = now() - interval '40 days' where id = id_old_state;
+  id_old_env := knowledge.put('t-stale', 'environment', 'box', 'the old box', '{"name":"box","value":"x"}'::jsonb);
+  update knowledge.rows set created_at = now() - interval '40 days' where id = id_old_env;
+
+  select array_agg(key order by key) into stale_keys from knowledge.stale('t-stale', 30);
+  assert stale_keys = array['box', 'old'], format('stale(30) must return the aged state and environment rows only; got %s', stale_keys);
+  assert not exists (select 1 from knowledge.stale('t-stale', 30) s where s.id = id_fresh), 'a fresh row is never stale';
+
+  perform knowledge.put('t-stale', 'state', 'old', 'set again just now', '{"value":"v"}'::jsonb);
+  assert not exists (select 1 from knowledge.stale('t-stale', 30) s where s.key = 'old'), 'a re-put row is no longer stale';
+
+  r := knowledge.recall('t-stale');
+  assert position('stale over 30 days' in r) > 0, 'recall ends with the stale nudge while an aged row remains';
+  assert position('knowledge.stale(''t-stale'', 30)' in r) > 0, 'the nudge names the call that lists the stale rows';
+end $$;
+
+-- break: recall prints a stale line for a project with nothing stale.
+do $$
+declare r text;
+begin
+  perform knowledge.put('t-stale-clean', 'state', 'runs', 'up now', '{"value":"v"}'::jsonb);
+  r := knowledge.recall('t-stale-clean');
+  assert position('stale over' in r) = 0, 'recall adds no stale line when nothing is stale';
+end $$;
