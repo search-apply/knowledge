@@ -60,30 +60,60 @@ The curated store has eleven built-in kinds; a project adds its own with `add_ki
 - `recipe` -- a recipe with its steps.
 - `term` -- a defined term.
 
-Every row has a kind, a key and a text of at most three lines. At the start of each session the
-plugin prints the project's recall: the current state rows, the decisions of the last 30 days, the
-lessons of the last 14, the pointers, the datasets and the open items, one line per row. The line
-shape is `k#<id> <key>: <text>`, where `k#<id>` is the row's id, used to cite, read
-(`knowledge.get(4)`) or replace (`knowledge.supersede(4, ...)`) that row. Example, the recall of
-the bundled `demo` project (load `db/seed/demo.sql`, then `select knowledge.recall('demo')`):
+### How the data is stored
 
-```
-# demo recall 2026-10-11
-## state
-k#2 release: the next release is in progress
-k#1 runs: api and worker containers are up
-## decisions (last 30 days)
-k#5 ui: front the store with a generic postgres mcp server
-k#4 store: add a ds schema for agent datasets
-## lessons (last 14 days)
-k#6 bash-wrap: a big command output must not sit in context
-## pointers
-k#7 start: read the brief before touching the schema
-## datasets
-demo_titles: 7 rows, seven sample title verdicts for the demo project
-## open
-(none)
-```
+Three tables carry everything; agents touch them only through the SQL functions.
+
+`knowledge.rows` holds the curated memory, one row per item. A new put on the same project, kind
+and key adds a row and marks the old one superseded, so history stays and the view
+`knowledge.current` shows the latest. `text` is at most three lines; `fields` carries what the kind
+requires. Rows of the bundled `demo` project:
+
+| id | kind | key | text | fields | superseded_by |
+|---|---|---|---|---|---|
+| 1 | state | runs | api and worker containers are up | {"value": "up"} | |
+| 3 | decision | store | keep one postgres with three schemas | {"why": "fewer moving parts", "options": "one postgres, sqlite plus files", "who_ruled": "master"} | 4 |
+| 4 | decision | store | add a ds schema for agent datasets | {"why": "agents need real tables, not files", "options": "a ds schema, flat files", "who_ruled": "master"} | |
+| 6 | lesson | bash-wrap | a big command output must not sit in context | {"incident": "a session held a huge log in context and stalled", "rule": "store the output, hand back a digest"} | |
+| 7 | pointer | start | read the brief before touching the schema | {"path": "docs/brief.md", "what": "what we build and why"} | |
+
+The other columns: `project`, `issue` and `commit` (where the row came from), `source`, `who`,
+`tags`, `created_at`.
+
+`knowledge.kinds` is the vocabulary: the name, a description and the fields a row of that kind
+must carry. The eleven built-in kinds are above; `add_kind('convention', 'a house convention',
+'["rule"]')` adds one.
+
+| name | fields |
+|---|---|
+| decision | why, options, who_ruled |
+| lesson | incident, rule |
+| state | value |
+| pointer | path, what |
+| fact | verified_on, how |
+
+`scratch.outputs` holds command output that was too long for the context: the hook stores the
+whole body, hands the agent a five-line digest, and the agent reads the rest with `scratch.read`
+or `scratch.grep`. Rows expire after seven days.
+
+| id | session | command | lines | expires_at |
+|---|---|---|---|---|
+| 12 | 7f3a... | docker logs api | 4812 | 2026-10-18 |
+
+`ds.catalog` is the index of agent datasets; the data itself is a plain table in the `ds` schema,
+one per dataset, registered so that `recall` and `ds.list` show it.
+
+| table_name | project | summary | who |
+|---|---|---|---|
+| demo_titles | demo | seven sample title verdicts for the demo project | master |
+
+`knowledge.config` holds the few knobs (recall windows, scratch retention and digest size, the
+dataset row cap and timeout), per project with a `*` default; the Environment section lists them.
+
+At the start of a session the plugin reads these tables and prints the project's recall: the
+state rows, the decisions of the last 30 days, the lessons of the last 14, the pointers, the
+datasets and the open items, one line each. Load `db/seed/demo.sql` and run
+`select knowledge.recall('demo')` to see it.
 
 ## How it works
 
