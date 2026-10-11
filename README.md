@@ -105,6 +105,8 @@ docker run --rm -v knowledge_data:/v -v "$PWD":/out alpine tar czf /out/knowledg
 
 ## Development
 
+`bin/index-headings <project> <path>...` indexes a repo's markdown headings into `knowledge` section rows; see `skills/knowledge/SKILL.md`.
+
 Docker is the only host dependency. `db/tests/run.sh` starts a throwaway `postgres:18` container
 (`knowledge-test-$$`), applies `db/init`, runs every `db/tests/*.sql` file in name order and every
 `db/tests/hooks/*.sh` hook script, then removes the container on exit; it ends with a

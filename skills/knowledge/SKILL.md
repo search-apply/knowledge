@@ -41,5 +41,13 @@ Curated memory kept for years, one project per store (the `KNOWLEDGE_PROJECT` en
 - Export the project with the handoff: `select knowledge.export('<project>', 'json');`
 - Take a `pg_dump` backup before any schema change.
 
+## Indexing
+- The master runs `bin/index-headings <project> <path>...` over a repo's markdown to keep it
+  searchable: one `section` row per `^#{1,4} ` heading, keyed `<file>#<slug>`.
+- A section row's `fields` holds `file`, `heading`, `lines` and `summary` (the heading's first
+  non-empty content line, cut at 200 characters); its `text` is the heading plus that summary.
+- A rerun supersedes a row whose heading moved or changed; an unchanged heading keeps its id.
+- Search sections by words: `select * from knowledge.search('<project>', 'webhook cancel', 'section');`
+
 ## Never
 - No secrets, no personal data, no transcripts, no agents' replies.
