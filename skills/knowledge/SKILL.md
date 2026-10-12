@@ -22,6 +22,7 @@ No hook line (another client): leave `session` null.
 | current | a view: the newest note per project, kind and key | |
 | kinds | decision, fact, state, lesson, pointer, incident, recipe, term, next, summary | name |
 | datasets | a table of your own in this schema, with what it holds, ref, session | table_name |
+| handoffs | one row per boundary: text (one screen: what is live, in flight, next, open, what to read), notes (the ids to read), session, created_at | id |
 
 A task's `ref` is whatever names it where work is tracked: `#41`, `PROJ-42`, `docs/plan.md` or a
 URL. A note's `ref` must be a row in `tasks`, so insert the task first or leave `ref` null. A
@@ -30,13 +31,14 @@ are only ever inserted. The same key again is the new truth, `current` shows it,
 stays as history. A new kind: `insert into knowledge.kinds values ('convention', 'a house convention');`
 
 ## At the start, and after a compaction
+The hook prints the newest handoff for the project, or `knowledge: no handoff yet`. Read its notes, then the open tasks:
 ```sql
-select kind, key, text from knowledge.current where project = '<project>' and kind in ('state', 'next');
-select kind, key, text, created_at from knowledge.current where project = '<project>' order by created_at desc limit 30;
+select n.kind, n.key, n.text from knowledge.handoffs h join knowledge.notes n on n.id = any(h.notes) or n.session = h.session where h.id = <id> order by n.created_at;
+select ref, title, status from knowledge.tasks where project = '<project>' and status <> 'done';
 ```
-Tell the user one sentence, never the query. Nothing stored: "The knowledge store is up. I will
-keep structured notes here on what we work on." Rows found: "The knowledge store is up, with N
-notes on this project. The latest: <one line>."
+Tell the user one sentence, never the query. No handoff: "The knowledge store is up. I will keep
+structured notes here on what we work on." A handoff: "The knowledge store is up. The last handoff
+says: <one line>."
 
 ## While working (main session only)
 ```sql
@@ -54,16 +56,18 @@ pointer when a place proved worth reading, an incident with its cause and fix, a
 steps, a term with its definition, a summary when a task closes.
 
 ## At the end, and before a compaction
-A `state` note (what is up, what is in flight) and a `next` note (the next steps, as the user
-worded them), then close the session:
+Every insert into notes ends with `returning id`. Keep the ids. Write the handoff, one screen: what
+is live, what is in flight, the next steps as the user worded them, what is open, what to read
+first. Then close the session:
 ```sql
+insert into knowledge.handoffs (project, session, text, notes) values ('<project>', '<session>', '<one screen>', array[<ids>]) returning id;
 update knowledge.sessions set ended_at = now(), summary = 'Built the cancel flow for #41, tests green, merged.' where id = '<session>';
 ```
+Ids lost after a compaction: pass `'{}'`, the notes of this session are found through `session`.
+The kinds `state` and `next` stay for notes that are not a boundary.
 
 ## Finding things (either role)
 ```sql
--- open work
-select ref, title, status from knowledge.tasks where project = '<project>' and status <> 'done';
 -- everything about one task
 select kind, key, text, created_at from knowledge.notes where project = '<project>' and ref = '#41' order by created_at;
 -- by kind, by area, by words

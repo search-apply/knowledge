@@ -8,21 +8,21 @@ after installing it you only tell your model to use it. Nothing leaves your mach
 ## What a session says at start
 
 When a session starts, the plugin makes sure the store is up, records the session, and gives the
-model one line with the session id and the project name. The model then looks at what is stored
-for the project and tells you in one sentence. On a new project:
+model one line with the session id and the project name, then the newest handoff for the project.
+The model reads the notes behind it and tells you in one sentence. On a new project:
 
 ```
 The knowledge store is up. I will keep structured notes here on what we work on.
 ```
 
-Later, with notes stored:
+Later, with a handoff stored:
 
 ```
-The knowledge store is up, with 14 notes on this project. The latest: the subscription ends at
-Stripe's cancel_at, never at the webhook time.
+The knowledge store is up. The last handoff says: the cancel flow for #41 is merged, next is the
+webhook replay in #42.
 ```
 
-The line the plugin prints is for the model. The model reads the store and speaks.
+What the plugin prints is for the model. The model reads the store and speaks.
 
 ## Requirements
 
@@ -64,7 +64,7 @@ starts nothing. It only tells the model to lean on the store that is already the
 
 ## What is in the database
 
-One schema, `knowledge`. Six default tables and one view, created once when the container is
+One schema, `knowledge`. Seven default tables and one view, created once when the container is
 made. The model's own tables live in the same schema, next to them.
 
 ### The default tables
@@ -77,6 +77,7 @@ made. The model's own tables live in the same schema, next to them.
 | `notes` | one thing worth keeping, of one kind, under one key, at most 2000 characters | id |
 | `kinds` | the vocabulary for notes | name |
 | `datasets` | a table the model made, with what it holds | table_name |
+| `handoffs` | one screen written at a boundary: what is live, in flight, next, open, what to read, with the ids of the notes behind it | id |
 
 The view `knowledge.current` shows the newest note per project, kind and key. Notes are never
 updated or deleted. A new note under the same key is the new truth and the view shows it. The old
@@ -117,25 +118,33 @@ The datasets:
 |---|---|---|---|---|
 | demo_titles | demo | #42 | 9c1e | Seven job titles with the verdict the parser gave each |
 
+The handoff:
+
+| session | text | notes |
+|---|---|---|
+| 3f2a | Live: the cancel flow for #41, merged. Next: the webhook replay in #42. Read the lesson stripe-webhook first. | {1,2} |
+
 The kinds are the vocabulary: `decision`, `fact`, `state`, `lesson`, `pointer`, `incident`,
 `recipe`, `term`, `next` and `summary`, each with one line saying what it is for. One insert
 adds another.
 
 ### How the model uses them
 
-- At the start it reads the `state` and `next` notes and says the sentence above.
+- At the start it reads the newest handoff the hook printed, the notes behind it and the open
+  tasks, and says the sentence above.
 - A task starts: one row in `tasks`.
 - Something is decided, learned, changed or found: one row in `notes`, with the task ref and the
   session id.
 - Rows of data a piece of work produces, like a scraped list or a benchmark: a table of its own,
   `knowledge.<project>_<topic>`, plus one row in `datasets` saying what it holds.
-- At the end, and before the context is compacted: a `state` note, a `next` note and the session's
-  summary. After a compaction the plugin prints the same line again, the model reads the state and
-  next notes and goes on. There is no handoff file to write.
+- At the end, and before the context is compacted: one `handoffs` row, a screen of text with the
+  ids of the notes written in this stretch, and the session's summary. After a compaction the
+  plugin prints that handoff, the model reads its notes and goes on. There is no handoff file.
 
 ### The queries the model uses
 
-- At the start: `select kind, key, text from knowledge.current where project = '<project>' and kind in ('state', 'next')`
+- At the start, the notes behind the handoff the hook printed: `select n.kind, n.key, n.text from knowledge.handoffs h join knowledge.notes n on n.id = any(h.notes) or n.session = h.session where h.id = <id> order by n.created_at`
+- At the end: `insert into knowledge.handoffs (project, session, text, notes) values ('<project>', '<session>', '<one screen>', array[12, 13])`
 - A task starts: `insert into knowledge.tasks (project, ref, title, url, status) values ('<project>', '#41', 'Cancel at period end', 'https://...', 'open')`
 - Something is decided: `insert into knowledge.notes (project, kind, key, text, ref, session) values ('<project>', 'decision', 'billing-cancel', 'Cancel at the period end.', '#41', '<session>')`
 - Everything about a task: `select kind, key, text, created_at from knowledge.notes where project = '<project>' and ref = '#41' order by created_at`
