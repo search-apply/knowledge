@@ -282,6 +282,8 @@ them.
   retrying and does not exit, so reconnect from `/mcp`, or open a new session.
 - What the background start is doing: its log is `$HOME/.knowledge/init.log`. The container
   creation, the image pulls and any error from them land there.
+- A session's MCP sidecar is named and labelled with the session's pid; orphan sidecars left by a
+  killed client are reaped at the next session's start.
 
 ## Environment
 

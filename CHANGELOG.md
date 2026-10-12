@@ -8,6 +8,7 @@
 - Removed: `knowledge.rows` with its `fields`, `tags`, `commit`, `source`, `who`, `issue` and `superseded_by` columns, `knowledge.put`, `knowledge.search`, the `finding` and `environment` kinds. Added kinds: `next`, `summary`.
 - Both skills rewritten around the tables, the flow of a session and the queries.
 - A `handoffs` table: one row per boundary, one screen of text with the ids of the notes behind it. The session-start hook prints the newest handoff for the project at start and after a compaction, so there is no handoff file.
+- `bin/mcp` names and labels the container it starts with the owning session's pid, and reaps any labelled container whose owner pid is gone before starting its own, so a sidecar orphaned by a killed client does not outlive its session.
 
 ## 0.2.0 - unreleased
 

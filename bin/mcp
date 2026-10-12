@@ -34,6 +34,18 @@ esac
 container="$(knowledge_container)"
 network="${KNOWLEDGE_NETWORK:-knowledge}"
 image="${KNOWLEDGE_MCP_IMAGE:-crystaldba/postgres-mcp}"
+owner="$PPID"
+name="knowledge-mcp-${role}-${owner}"
+
+# Reap orphans: a session that ends without the docker client seeing the exit leaves its sidecar
+# running. Only containers labelled knowledge.owner are ever touched; the reap fails open.
+{
+  for c in $(docker ps -aq --filter "label=knowledge.owner"); do
+    pid="$(docker inspect -f '{{index .Config.Labels "knowledge.owner"}}' "$c" 2>/dev/null || true)"
+    [ -n "$pid" ] && ! ps -p "$pid" >/dev/null 2>&1 && docker rm -f "$c" >/dev/null 2>&1
+  done
+} || true
 
 export DATABASE_URI="postgresql://${user}:${pw}@${container}:5432/knowledge"
-exec docker run -i --rm --network "$network" -e DATABASE_URI "$image" --access-mode=unrestricted
+exec docker run -i --rm --network "$network" --name "$name" --label "knowledge.owner=$owner" \
+  -e DATABASE_URI "$image" --access-mode=unrestricted
