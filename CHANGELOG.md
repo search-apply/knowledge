@@ -7,6 +7,7 @@
 - The model's own tables live in the `knowledge` schema too, each registered with one `datasets` row. The `ds` schema is gone.
 - Removed: `knowledge.rows` with its `fields`, `tags`, `commit`, `source`, `who`, `issue` and `superseded_by` columns, `knowledge.put`, `knowledge.search`, the `finding` and `environment` kinds. Added kinds: `next`, `summary`.
 - Both skills rewritten around the tables, the flow of a session and the queries.
+- A `handoffs` table: one row per boundary, one screen of text with the ids of the notes behind it. The session-start hook prints the newest handoff for the project at start and after a compaction, so there is no handoff file.
 
 ## 0.2.0 - unreleased
 
