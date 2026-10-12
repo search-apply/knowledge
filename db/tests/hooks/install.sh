@@ -43,7 +43,8 @@ case_store_down_one_line() {
 case_session_start_records_session() {
   local name="session-start-records-session" out rc want
   if [ ! -x "$SESSION_START" ]; then fail "$name" "hooks/session-start.sh not found or not executable"; return; fi
-  want="knowledge: session test-session-1, project hooktest. Read the state and the next steps first: select kind, key, text from knowledge.current where project = 'hooktest' and kind in ('state', 'next')"
+  want="knowledge: session test-session-1, project hooktest.
+knowledge: no handoff yet"
   out=$(printf '%s' '{"session_id":"test-session-1","source":"startup"}' | KNOWLEDGE_PROJECT=hooktest "$SESSION_START" 2>&1); rc=$?
   if [ "$rc" -ne 0 ]; then fail "$name" "exit $rc, want 0"; return; fi
   if [ "$out" != "$want" ]; then fail "$name" "got: $out"; return; fi

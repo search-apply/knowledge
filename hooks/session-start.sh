@@ -34,15 +34,21 @@ insert into knowledge.projects (name) values (:'p') on conflict do nothing;
 insert into knowledge.sessions (id, project) values (:'s', :'p') on conflict do nothing;
 SQL
     then
-      echo "knowledge: session ${session_id}, project ${project}. Read the state and the next steps first: select kind, key, text from knowledge.current where project = '${project}' and kind in ('state', 'next')"
+      echo "knowledge: session ${session_id}, project ${project}."
 
       local h_id
-      if h_id="$(psql_as master -v p="$project" -c "select id from knowledge.handoffs where project = :'p' order by created_at desc limit 1" 2>/dev/null)"; then
+      if h_id="$(psql_as master -v p="$project" <<SQL 2>/dev/null
+select id from knowledge.handoffs where project = :'p' order by created_at desc limit 1
+SQL
+      )"; then
         if [ -z "$h_id" ]; then
           echo "knowledge: no handoff yet"
         else
           local h_text
-          if h_text="$(psql_as master -v p="$project" -c "select text from knowledge.handoffs where project = :'p' order by created_at desc limit 1" 2>/dev/null)"; then
+          if h_text="$(psql_as master -v p="$project" <<SQL 2>/dev/null
+select text from knowledge.handoffs where project = :'p' order by created_at desc limit 1
+SQL
+          )"; then
             printf '%s\n' "$h_text"
             echo "knowledge: read its notes: select n.kind, n.key, n.text from knowledge.handoffs h join knowledge.notes n on n.id = any(h.notes) or n.session = h.session where h.id = ${h_id} order by n.created_at"
           fi
