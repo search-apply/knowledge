@@ -223,7 +223,8 @@ to the docker network reaches the container through a published port: set `KNOWL
 
 A client that cannot load the plugin's skills can be given the two skill files as plain text. They
 are in `skills/knowledge/SKILL.md` and `skills/data/SKILL.md`. Such a client does not get the
-session line from the hook, so it writes notes without a session id.
+session line from the hook, so it inserts its project row once (`insert into knowledge.projects
+(name) values ('<project>') on conflict do nothing`) and writes notes without a session id.
 
 Subagents, from this plugin or any other, should get only the `knowledge-agent` entry, never the
 writable one. Its tools appear under the prefix `mcp__plugin_knowledge_knowledge-agent__`. The

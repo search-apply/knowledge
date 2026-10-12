@@ -7,9 +7,10 @@ user-invocable: false
 # The knowledge store
 
 One Postgres database, one schema `knowledge`, reached through the MCP tool `execute_sql`. The
-main session connects as `master` and writes. A spawned subagent connects as `agent` and reads.
-The session-start hook prints one line with the session id and the project name. Use both in
-every write, as `<session>` and `<project>` below.
+main session connects as `master` and writes. A spawned subagent connects as `agent` and reads,
+and may make tables of its own (the `data` skill). The session-start hook prints one line with the
+session id and the project name. Use both in every write, as `<session>` and `<project>` below.
+No hook line (another client): leave `session` null.
 
 ## The tables
 | table | one row is | key |
@@ -23,9 +24,10 @@ every write, as `<session>` and `<project>` below.
 | datasets | a table of your own in this schema, with what it holds, ref, session | table_name |
 
 A task's `ref` is whatever names it where work is tracked: `#41`, `PROJ-42`, `docs/plan.md` or a
-URL. A note's `key` is `<area>-<topic>`, like `billing-cancel`. Text is at most 2000 characters.
-Notes are only ever inserted. The same key again is the new truth, `current` shows it, the old
-note stays as history.
+URL. A note's `ref` must be a row in `tasks`, so insert the task first or leave `ref` null. A
+note's `key` is `<area>-<topic>`, like `billing-cancel`. Text is at most 2000 characters. Notes
+are only ever inserted. The same key again is the new truth, `current` shows it, the old note
+stays as history. A new kind: `insert into knowledge.kinds values ('convention', 'a house convention');`
 
 ## At the start, and after a compaction
 ```sql
@@ -74,9 +76,9 @@ select text, created_at from knowledge.notes where project = '<project>' and key
 select s.started_at, s.summary, n.kind, n.key from knowledge.sessions s left join knowledge.notes n on n.session = s.id where s.id = '<session>';
 select id, started_at, summary from knowledge.sessions where project = '<project>' order by started_at desc limit 10;
 -- the last month, per task
-select t.ref, t.title, t.status, count(n.id) as notes, min(n.created_at), max(n.created_at) from knowledge.tasks t
-  left join knowledge.notes n on n.project = t.project and n.ref = t.ref
-  where t.project = '<project>' and t.created_at >= now() - interval '30 days' group by t.ref, t.title, t.status order by max(n.created_at) desc;
+select t.ref, t.title, t.status, count(*) as notes, min(n.created_at), max(n.created_at) from knowledge.tasks t
+  join knowledge.notes n on n.project = t.project and n.ref = t.ref
+  where t.project = '<project>' and n.created_at >= now() - interval '30 days' group by t.ref, t.title, t.status order by max(n.created_at) desc;
 -- a decision and the session that made it
 select n.text, s.started_at, s.summary from knowledge.notes n join knowledge.sessions s on s.id = n.session where n.project = '<project>' and n.kind = 'decision' and n.key = 'billing-cancel';
 -- the data behind a task
