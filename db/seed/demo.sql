@@ -35,3 +35,7 @@ insert into knowledge.demo_titles (title, verdict) values
 
 insert into knowledge.datasets (table_name, project, ref, session, what) values
   ('demo_titles', 'demo', '#42', '9c1e', 'Seven job titles with the verdict the parser gave each');
+
+insert into knowledge.handoffs (project, session, text, notes) values
+  ('demo', '3f2a', 'Live: the cancel flow for #41, merged. Next: the webhook replay in #42. Read the lesson stripe-webhook first.',
+   (select array_agg(id) from knowledge.notes where project = 'demo' and (key, kind) in (('billing-cancel', 'decision'), ('stripe-webhook', 'lesson'))));

@@ -62,6 +62,17 @@ create table knowledge.datasets (
   foreign key (project, ref) references knowledge.tasks (project, ref)
 );
 
+create table knowledge.handoffs (
+  id bigint generated always as identity primary key,
+  project text not null references knowledge.projects,
+  session text not null references knowledge.sessions,
+  text text not null check (char_length(text) <= 4000),
+  notes bigint[] not null default '{}',
+  created_at timestamptz not null default clock_timestamp()
+);
+
+create index handoffs_project_created_idx on knowledge.handoffs (project, created_at desc);
+
 -- grants: master owns the data, agent reads it; each role may create its own tables, readable
 -- by the other.
 grant select, insert, update, delete on all tables in schema knowledge to master;

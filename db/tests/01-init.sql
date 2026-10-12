@@ -15,7 +15,7 @@ begin
     format('roles: expected postgres, master and agent as login roles (3), found %s', role_count);
 end $$;
 
--- break: one of the six tables or the view is missing or misnamed.
+-- break: one of the seven tables or the view is missing or misnamed.
 do $$
 declare
   table_count int;
@@ -23,9 +23,9 @@ begin
   select count(*) into table_count
   from information_schema.tables
   where table_schema = 'knowledge'
-    and table_name in ('projects', 'kinds', 'sessions', 'tasks', 'notes', 'datasets', 'current');
-  assert table_count = 7,
-    format('tables: expected the six tables plus the view (7), found %s', table_count);
+    and table_name in ('projects', 'kinds', 'sessions', 'tasks', 'notes', 'datasets', 'handoffs', 'current');
+  assert table_count = 8,
+    format('tables: expected the seven tables plus the view (8), found %s', table_count);
 end $$;
 
 -- break: a default kind is missing, duplicated or dropped by a later init file.
