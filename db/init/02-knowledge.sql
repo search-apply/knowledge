@@ -25,6 +25,7 @@ create table knowledge.tasks (
   title text not null,
   url text,
   status text not null default 'open',
+  project_item_id text,
   created_at timestamptz not null default now(),
   primary key (project, ref)
 );
@@ -46,6 +47,23 @@ create index notes_project_kind_key_idx on knowledge.notes (project, kind, key);
 create index notes_project_ref_idx on knowledge.notes (project, ref);
 create index notes_session_idx on knowledge.notes (session);
 create index notes_fts_idx on knowledge.notes using gin (to_tsvector('simple', key || ' ' || text));
+
+-- a note's ref must exist in tasks (the FK above); this stub keeps the FK from ever failing an
+-- insert by creating the missing tasks row first. See db/migrations/001-notes-ref-stub.sql.
+create or replace function knowledge.notes_stub_task() returns trigger as $$
+begin
+  if new.ref is not null then
+    insert into knowledge.tasks (project, ref, title, url, status)
+    values (new.project, new.ref, new.ref, null, 'open')
+    on conflict (project, ref) do nothing;
+  end if;
+  return new;
+end;
+$$ language plpgsql;
+
+create trigger notes_stub_task_trg
+  before insert on knowledge.notes
+  for each row execute function knowledge.notes_stub_task();
 
 create view knowledge.current as
   select distinct on (project, kind, key) id, project, kind, key, text, ref, session, created_at

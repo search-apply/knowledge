@@ -6,29 +6,22 @@ user-invocable: false
 
 # The knowledge store
 
-One Postgres database, one schema `knowledge`, reached through the MCP tool `execute_sql`. The
-main session connects as `master` and writes. A spawned subagent connects as `agent` and reads,
-and may make tables of its own (the `data` skill). The session-start hook prints one line with the
-session id and the project name. Use both in every write, as `<session>` and `<project>` below.
-No hook line (another client): leave `session` null.
+One Postgres database, one schema `knowledge`, reached through the MCP tool `execute_sql`. The main session connects as `master` and writes. A spawned subagent connects as `agent` and reads, and may make tables of its own (the `data` skill). The session-start hook prints one line with the session id and the project name. Use both in every write, as `<session>` and `<project>` below. No hook line (another client): leave `session` null. MCP down: the main session falls back to `docker exec -i knowledge psql -U postgres -d knowledge -At <<'SQL' ... SQL`; an agent without that access gets the recipe pasted into its brief.
 
 ## The tables
 | table | one row is | key |
 |---|---|---|
 | projects | a project | name |
 | sessions | one Claude Code session: started_at, ended_at, summary | id, the session id |
-| tasks | a unit of work: title, url, status | project, ref |
+| tasks | a unit of work: title, url, status, project_item_id | project, ref |
 | notes | one thing worth keeping: kind, key, text, ref, session, created_at | id |
 | current | a view: the newest note per project, kind and key | |
 | kinds | decision, fact, state, lesson, pointer, incident, recipe, term, next, summary | name |
 | datasets | a table of your own in this schema, with what it holds, ref, session | table_name |
-| handoffs | one row per boundary: text (one screen: what is live, in flight, next, open, what to read), notes (the ids to read), session, created_at | id |
+| handoffs | one row per boundary: text (one screen: newest facts first, what to read last), notes (the ids to read), session, created_at | id |
+| reports | a research report: slug, question, verdict, method, sources, body | slug |
 
-A task's `ref` is whatever names it where work is tracked: `#41`, `PROJ-42`, `docs/plan.md` or a
-URL. A note's `ref` must be a row in `tasks`, so insert the task first or leave `ref` null. A
-note's `key` is `<area>-<topic>`, like `billing-cancel`. Text is at most 2000 characters. Notes
-are only ever inserted. The same key again is the new truth, `current` shows it, the old note
-stays as history. A new kind: `insert into knowledge.kinds values ('convention', 'a house convention');`
+A task's `ref` is whatever names it where work is tracked: `#41`, `PROJ-42`, `docs/plan.md` or a URL. A new `ref` gets a stub `tasks` row automatically (title = the ref); give it a real title/url with the upsert when you know them. A note's `key` is `<area>-<topic>`, like `billing-cancel`; areas in use: `webui-`, `nextjs-`, `ops-`, `release-`, `stripe-`, `bedrock-`. Text is at most 2000 characters (a check constraint, it stays). Notes are only ever inserted; the same key again is the new truth, `current` shows it, the old note stays as history. `recipe` = an `ops-<topic>` operation a future session will run again (prefer it over burying steps in an incident note); `state` = a point-in-time status a handoff cites; `incident` = what broke, its cause, its fix. A report by slug: `select question, verdict, body from knowledge.reports where slug = '<slug>';`
 
 ## At the start, and after a compaction
 The hook prints the newest handoff for the project, or `knowledge: no handoff yet`. Read its notes, then the open tasks:
@@ -36,9 +29,7 @@ The hook prints the newest handoff for the project, or `knowledge: no handoff ye
 select n.kind, n.key, n.text from knowledge.handoffs h join knowledge.notes n on n.id = any(h.notes) or n.session = h.session where h.id = <id> order by n.created_at;
 select ref, title, status from knowledge.tasks where project = '<project>' and status <> 'done';
 ```
-Tell the user one sentence, never the query. No handoff: "The knowledge store is up. I will keep
-structured notes here on what we work on." A handoff: "The knowledge store is up. The last handoff
-says: <one line>."
+Tell the user one sentence, never the query. No handoff: "The knowledge store is up. I will keep structured notes here on what we work on." A handoff: "The knowledge store is up. The last handoff says: <one line>."
 
 ## While working (main session only)
 ```sql
@@ -51,20 +42,15 @@ insert into knowledge.notes (project, kind, key, text, ref, session)
 -- a task ends
 update knowledge.tasks set status = 'done' where project = '<project>' and ref = '#41';
 ```
-Store a decision when it is made, a lesson when something bit, a fact when it was verified, a
-pointer when a place proved worth reading, an incident with its cause and fix, a recipe with its
-steps, a term with its definition, a summary when a task closes.
+Fill `project_item_id` (`PVTI_...`) from `gh project item-list 5 --owner search-apply --format json`, matched by content.repository + content.number, then an `update ... set project_item_id`. A board move is one `updateProjectV2ItemFieldValue` per item, from a python loop; a zsh `set --` loop broke the GraphQL args. Store a decision when it is made, a lesson when something bit, a fact when it was verified, a pointer when a place proved worth reading, an incident with its cause and fix, a recipe with its steps, a term with its definition, a summary when a task closes.
 
 ## At the end, and before a compaction
-Every insert into notes ends with `returning id`. Keep the ids. Write the handoff, one screen: what
-is live, what is in flight, the next steps as the user worded them, what is open, what to read
-first. Then close the session:
+Every insert into notes ends with `returning id`. Keep the ids. Write the handoff, one screen, newest facts first: what is live, what is in flight, the next steps as the user worded them, what is open, and last of all what to read first. Then close the session:
 ```sql
 insert into knowledge.handoffs (project, session, text, notes) values ('<project>', '<session>', '<one screen>', array[<ids>]) returning id;
 update knowledge.sessions set ended_at = now(), summary = 'Built the cancel flow for #41, tests green, merged.' where id = '<session>';
 ```
-Ids lost after a compaction: pass `'{}'`, the notes of this session are found through `session`.
-The kinds `state` and `next` stay for notes that are not a boundary.
+Ids lost after a compaction: pass `'{}'`, the notes of this session are found through `session`. The kinds `state` and `next` stay for notes that are not a boundary.
 
 ## Finding things (either role)
 ```sql
@@ -91,5 +77,4 @@ select table_name, what from knowledge.datasets where project = '<project>' and 
 A question about the past starts at `tasks` or `sessions`, then joins `notes`.
 
 ## Never
-No secrets, no personal data, no transcripts, no model replies. Never more than 40 lines of query
-output into the context: add a `limit`.
+No secrets, no personal data, no transcripts, no model replies. Never more than 40 lines of query output into the context: add a `limit`.

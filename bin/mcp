@@ -46,6 +46,13 @@ name="knowledge-mcp-${role}-${owner}"
   done
 } || true
 
+# A reconnect from the same client reuses this exact name while its owner pid is still alive, so
+# the pid-liveness reap above leaves behind the sidecar an earlier, now-dead connection attempt
+# started under the same name -- the docker run below would then fail with "name already in use"
+# and the MCP server would exit immediately on every retry. Clear that one name unconditionally:
+# we are about to claim it ourselves, so anything holding it is stale by definition.
+docker rm -f "$name" >/dev/null 2>&1 || true
+
 export DATABASE_URI="postgresql://${user}:${pw}@${container}:5432/knowledge"
 exec docker run -i --rm --network "$network" --name "$name" --label "knowledge.owner=$owner" \
   -e DATABASE_URI "$image" --access-mode=unrestricted

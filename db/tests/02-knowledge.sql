@@ -53,17 +53,28 @@ begin
   assert n = 2, 'notes must keep both rows under the same key as history';
 end $$;
 
--- break: a note with a ref that names no task is accepted.
+-- break: a note with a ref that names no task fails on the FK instead of stubbing one.
 do $$
-declare raised boolean := false; n int;
+declare n int; stub_title text; stub_status text;
 begin
   insert into knowledge.projects (name) values ('t-ref') on conflict do nothing;
-  begin
-    insert into knowledge.notes (project, kind, key, text, ref) values ('t-ref', 'state', 'k', 'v', '#999');
-  exception when foreign_key_violation then raised := true; end;
-  assert raised, 'a note with an unknown ref must be refused';
-  select count(*) into n from knowledge.notes where project = 't-ref';
-  assert n = 0, 'a rejected note must change nothing';
+  insert into knowledge.notes (project, kind, key, text, ref) values ('t-ref', 'state', 'k', 'v', '#999');
+  select count(*) into n from knowledge.notes where project = 't-ref' and ref = '#999';
+  assert n = 1, 'a note with an unknown ref must still be inserted';
+  select title, status into stub_title, stub_status from knowledge.tasks where project = 't-ref' and ref = '#999';
+  assert stub_title = '#999', 'the before-insert trigger must stub a tasks row titled with the ref';
+  assert stub_status = 'open', 'the stub tasks row must be open';
+end $$;
+
+-- break: tasks.project_item_id is missing, not nullable, or not filled by a later update.
+do $$
+declare stored text;
+begin
+  insert into knowledge.projects (name) values ('t-pvti') on conflict do nothing;
+  insert into knowledge.tasks (project, ref, title) values ('t-pvti', '#1', 'x');
+  update knowledge.tasks set project_item_id = 'PVTI_abc' where project = 't-pvti' and ref = '#1';
+  select project_item_id into stored from knowledge.tasks where project = 't-pvti' and ref = '#1';
+  assert stored = 'PVTI_abc', 'tasks.project_item_id must store the ProjectV2 item id';
 end $$;
 
 -- break: the gin index misses a word in a note's key or text.

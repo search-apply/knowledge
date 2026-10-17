@@ -9,6 +9,9 @@
 - Both skills rewritten around the tables, the flow of a session and the queries.
 - A `handoffs` table: one row per boundary, one screen of text with the ids of the notes behind it. The session-start hook prints the newest handoff for the project at start and after a compaction, so there is no handoff file.
 - `bin/mcp` names and labels the container it starts with the owning session's pid, and reaps any labelled container whose owner pid is gone before starting its own, so a sidecar orphaned by a killed client does not outlive its session.
+- `bin/mcp` also force-removes any sidecar already holding its own name before `docker run`: a reconnect from the same, still-live client pid left the earlier attempt's sidecar behind (the pid-liveness reap could not see it as stale), colliding on `docker run --name` and failing every retry.
+- A before-insert trigger on `knowledge.notes` stubs a `tasks` row (title = the ref, status `open`) when `ref` names no task yet, so the FK on `ref` never refuses an insert; give the stub a real title/url later with the upsert.
+- `knowledge.tasks` gained `project_item_id`, the GitHub ProjectV2 item id (`PVTI_...`), nullable.
 
 ## 0.2.0 - unreleased
 
