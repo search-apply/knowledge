@@ -29,7 +29,7 @@ The hook prints the newest handoff for the project, or `knowledge: no handoff ye
 select n.kind, n.key, n.text from knowledge.handoffs h join knowledge.notes n on n.id = any(h.notes) or n.session = h.session where h.id = <id> order by n.created_at;
 select ref, title, status from knowledge.tasks where project = '<project>' and status <> 'done';
 ```
-Tell the user one sentence, never the query. No handoff: "The knowledge store is up. I will keep structured notes here on what we work on." A handoff: "The knowledge store is up. The last handoff says: <one line>."
+Then run the handoff retention delete (the end section, one statement). Tell the user one sentence, never the query. No handoff: "The knowledge store is up. I will keep structured notes here on what we work on." A handoff: "The knowledge store is up. The last handoff says: <one line>."
 
 ## While working (main session only)
 ```sql
@@ -51,6 +51,10 @@ insert into knowledge.handoffs (project, session, text, notes) values ('<project
 update knowledge.sessions set ended_at = now(), summary = 'Built the cancel flow for #41, tests green, merged.' where id = '<session>';
 ```
 Ids lost after a compaction: pass `'{}'`, the notes of this session are found through `session`. The kinds `state` and `next` stay for notes that are not a boundary.
+Handoff rows are not history, the notes are: the newest row per UTC day stays, the per-turn rows of the day go. Run this delete at every session start, right after reading the newest handoff; it keeps the newest row of every day, today's included, so it is always safe and days apart do not matter:
+```sql
+delete from knowledge.handoffs h where h.project = '<project>' and h.id not in (select distinct on ((created_at at time zone 'UTC')::date) id from knowledge.handoffs where project = '<project>' order by (created_at at time zone 'UTC')::date, created_at desc);
+```
 
 ## Finding things (either role)
 ```sql
