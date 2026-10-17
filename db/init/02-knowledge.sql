@@ -1,5 +1,5 @@
--- 02-knowledge.sql: the knowledge schema (curated, kept for years) -- six tables, one view,
--- grants. Plain tables, no functions.
+-- 02-knowledge.sql: the knowledge schema (curated, kept for years) -- seven tables, one view,
+-- grants.
 
 create table knowledge.projects (
   name text primary key,
@@ -26,9 +26,27 @@ create table knowledge.tasks (
   url text,
   status text not null default 'open',
   project_item_id text,
+  repo text,
+  branch text,
+  hop text,
   created_at timestamptz not null default now(),
   primary key (project, ref)
 );
+
+-- a task's repo defaults from ref ("<repo>#<n>") when left null. See
+-- db/migrations/004-tasks-repo-branch-hop.sql.
+create or replace function knowledge.tasks_repo_from_ref() returns trigger as $$
+begin
+  if new.repo is null and new.ref ~ '^[a-z0-9.-]+#[0-9]+$' then
+    new.repo := split_part(new.ref, '#', 1);
+  end if;
+  return new;
+end;
+$$ language plpgsql;
+
+create trigger tasks_repo_from_ref_trg
+  before insert or update on knowledge.tasks
+  for each row execute function knowledge.tasks_repo_from_ref();
 
 create table knowledge.notes (
   id bigint generated always as identity primary key,
@@ -86,10 +104,31 @@ create table knowledge.handoffs (
   session text not null references knowledge.sessions,
   text text not null check (char_length(text) <= 4000),
   notes bigint[] not null default '{}',
+  task_ref text,
+  repos text[],
   created_at timestamptz not null default clock_timestamp()
 );
 
 create index handoffs_project_created_idx on knowledge.handoffs (project, created_at desc);
+
+-- a research report answering one question, found by slug or by the task ref it answers. See
+-- db/migrations/005-reports-ref.sql.
+create table knowledge.reports (
+  id bigint generated always as identity primary key,
+  project text not null references knowledge.projects,
+  slug text not null,
+  question text not null,
+  verdict text not null,
+  method text,
+  sources text,
+  body text not null,
+  tables text[] not null default '{}',
+  path text,
+  written_on date,
+  ref text,
+  created_at timestamptz not null default now(),
+  unique (project, slug)
+);
 
 -- grants: master owns the data, agent reads it; each role may create its own tables, readable
 -- by the other.

@@ -131,6 +131,51 @@ begin
   assert v_val = 'from-master', 'agent must be able to read a table master made';
 end $$;
 
+-- break: tasks_repo_from_ref_trg does not fill repo from a "<repo>#<n>" ref when repo is null.
+do $$
+declare got text;
+begin
+  insert into knowledge.projects (name) values ('t-repo') on conflict do nothing;
+  insert into knowledge.tasks (project, ref, title) values ('t-repo', 'jobs#46', 'x');
+  select repo into got from knowledge.tasks where project = 't-repo' and ref = 'jobs#46';
+  assert got = 'jobs', 'tasks_repo_from_ref_trg must set repo from ref when repo is null';
+end $$;
+
+-- break: a ref with no "<repo>#" prefix (a bare "#41", as existing refs use) raises instead of
+-- leaving repo null.
+do $$
+declare got text;
+begin
+  insert into knowledge.projects (name) values ('t-repo2') on conflict do nothing;
+  insert into knowledge.tasks (project, ref, title) values ('t-repo2', '#41', 'x');
+  select repo into got from knowledge.tasks where project = 't-repo2' and ref = '#41';
+  assert got is null, 'a ref with no repo prefix must leave repo null, not error';
+end $$;
+
+-- break: handoffs.task_ref or handoffs.repos do not round-trip.
+do $$
+declare got_ref text; got_repos text[];
+begin
+  insert into knowledge.projects (name) values ('t-handoff-cols') on conflict do nothing;
+  insert into knowledge.sessions (id, project) values ('t-handoff-cols-s', 't-handoff-cols') on conflict do nothing;
+  insert into knowledge.handoffs (project, session, text, task_ref, repos)
+    values ('t-handoff-cols', 't-handoff-cols-s', 'x', 'jobs#46', array['jobs', 'webui']);
+  select task_ref, repos into got_ref, got_repos from knowledge.handoffs where project = 't-handoff-cols';
+  assert got_ref = 'jobs#46', 'handoffs.task_ref must round-trip';
+  assert got_repos = array['jobs', 'webui'], 'handoffs.repos must round-trip';
+end $$;
+
+-- break: knowledge.reports is missing, or reports.ref does not round-trip.
+do $$
+declare got text;
+begin
+  insert into knowledge.projects (name) values ('t-reports-cols') on conflict do nothing;
+  insert into knowledge.reports (project, slug, question, verdict, body, ref)
+    values ('t-reports-cols', 'slug-1', 'q?', 'yes', 'body', 'jobs#46');
+  select ref into got from knowledge.reports where project = 't-reports-cols' and slug = 'slug-1';
+  assert got = 'jobs#46', 'reports.ref must round-trip';
+end $$;
+
 -- break: the agent role's statement_timeout is not set to 5s.
 do $$
 declare v_set boolean;

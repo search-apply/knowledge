@@ -50,7 +50,75 @@ select text from knowledge.handoffs where project = :'p' order by created_at des
 SQL
           )"; then
             printf '%s\n' "$h_text"
-            echo "knowledge: read its notes: select n.kind, n.key, n.text from knowledge.handoffs h join knowledge.notes n on n.id = any(h.notes) or n.session = h.session where h.id = ${h_id} order by n.created_at"
+
+            local task_ref
+            task_ref="$(psql_as master <<SQL 2>/dev/null
+select coalesce(task_ref, '') from knowledge.handoffs where id = ${h_id}
+SQL
+            )"
+
+            if [ -n "$task_ref" ]; then
+              local task_line
+              task_line="$(psql_as master -F $'\t' -v p="$project" -v tref="$task_ref" <<SQL 2>/dev/null
+select ref, title, coalesce(url,'-'), coalesce(repo,'-'), coalesce(branch,'-'), coalesce(hop,'-'), coalesce(status,'-')
+from knowledge.tasks where project = :'p' and ref = :'tref'
+SQL
+              )"
+              if [ -n "$task_line" ]; then
+                local t_ref t_title t_url t_repo t_branch t_hop t_status
+                IFS=$'\t' read -r t_ref t_title t_url t_repo t_branch t_hop t_status <<< "$task_line"
+                echo "knowledge: task ${t_ref} | ${t_title} | ${t_url} | ${t_repo} ${t_branch} | hop ${t_hop} | ${t_status}"
+              fi
+
+              local seen_tables=","
+              local reports_rows
+              reports_rows="$(psql_as master -F $'\t' -v p="$project" -v tref="$task_ref" <<SQL 2>/dev/null
+select slug, left(coalesce(verdict,'-'), 80), coalesce(tables, '{}') from knowledge.reports where project = :'p' and ref = :'tref' order by created_at
+SQL
+              )"
+              if [ -n "$reports_rows" ]; then
+                while IFS=$'\t' read -r r_slug r_verdict r_tables; do
+                  [ -z "$r_slug" ] && continue
+                  local inner tbl_list="" count name name_esc shown=0
+                  inner="${r_tables#\{}"
+                  inner="${inner%\}}"
+                  if [ -n "$inner" ]; then
+                    local tbl_arr
+                    IFS=',' read -ra tbl_arr <<< "$inner"
+                    for name in "${tbl_arr[@]}"; do
+                      seen_tables="${seen_tables}${name},"
+                      [ "$shown" -ge 10 ] && continue
+                      name_esc="${name//\"/\"\"}"
+                      count="$(psql_as master <<SQL 2>/dev/null
+select count(*) from knowledge."${name_esc}"
+SQL
+                      )"
+                      [ -n "$tbl_list" ] && tbl_list="${tbl_list}, "
+                      tbl_list="${tbl_list}${name}(${count:-0})"
+                      shown=$((shown + 1))
+                    done
+                  fi
+                  echo "knowledge: report ${r_slug} | ${r_verdict} | tables: ${tbl_list}"
+                done <<< "$reports_rows"
+              fi
+
+              local data_rows
+              data_rows="$(psql_as master -F $'\t' -v p="$project" -v tref="$task_ref" <<SQL 2>/dev/null
+select table_name, left(coalesce(what,'-'), 80) from knowledge.datasets where project = :'p' and ref = :'tref' order by created_at
+SQL
+              )"
+              if [ -n "$data_rows" ]; then
+                while IFS=$'\t' read -r d_table d_what; do
+                  [ -z "$d_table" ] && continue
+                  case "$seen_tables" in
+                    *",${d_table},"*) ;;
+                    *) echo "knowledge: data ${d_table} | ${d_what}" ;;
+                  esac
+                done <<< "$data_rows"
+              fi
+            fi
+
+            echo "knowledge: read its notes: select n.id, n.kind, n.key, n.text from knowledge.notes n where n.id = any((select notes from knowledge.handoffs where id = ${h_id})) order by n.id"
           fi
         fi
       fi

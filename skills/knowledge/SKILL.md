@@ -13,13 +13,13 @@ One Postgres database, one schema `knowledge`, reached through the MCP tool `exe
 |---|---|---|
 | projects | a project | name |
 | sessions | one Claude Code session: started_at, ended_at, summary | id, the session id |
-| tasks | a unit of work: title, url, status, project_item_id | project, ref |
+| tasks | a unit of work: title, url, status, project_item_id, repo, branch, hop | project, ref |
 | notes | one thing worth keeping: kind, key, text, ref, session, created_at | id |
 | current | a view: the newest note per project, kind and key | |
 | kinds | decision, fact, state, lesson, pointer, incident, recipe, term, next, summary | name |
 | datasets | a table of your own in this schema, with what it holds, ref, session | table_name |
-| handoffs | one row per boundary: text (one screen: newest facts first, what to read last), notes (the ids to read), session, created_at | id |
-| reports | a research report: slug, question, verdict, method, sources, body | slug |
+| handoffs | one row per boundary: text (one screen: newest facts first, what to read last), notes (the ids to read), task_ref, repos, session, created_at | id |
+| reports | a research report: slug, question, verdict, method, sources, body, ref | slug |
 
 A task's `ref` is whatever names it where work is tracked: `#41`, `PROJ-42`, `docs/plan.md` or a URL. A new `ref` gets a stub `tasks` row automatically (title = the ref); give it a real title/url with the upsert when you know them. A note's `key` is `<area>-<topic>`, like `billing-cancel`; areas in use: `webui-`, `nextjs-`, `ops-`, `release-`, `stripe-`, `bedrock-`. Text is at most 2000 characters (a check constraint, it stays). Notes are only ever inserted; the same key again is the new truth, `current` shows it, the old note stays as history. `recipe` = an `ops-<topic>` operation a future session will run again (prefer it over burying steps in an incident note); `state` = a point-in-time status a handoff cites; `incident` = what broke, its cause, its fix. A report by slug: `select question, verdict, body from knowledge.reports where slug = '<slug>';`
 
@@ -47,7 +47,7 @@ Fill `project_item_id` (`PVTI_...`) from `gh project item-list 5 --owner search-
 ## At the end, and before a compaction
 Every insert into notes ends with `returning id`. Keep the ids. Write the handoff, one screen, newest facts first: what is live, what is in flight, the next steps as the user worded them, what is open, and last of all what to read first. Then close the session:
 ```sql
-insert into knowledge.handoffs (project, session, text, notes) values ('<project>', '<session>', '<one screen>', array[<ids>]) returning id;
+insert into knowledge.handoffs (project, session, text, notes, task_ref, repos) values ('<project>', '<session>', '<one screen>', array[<ids>], '<repo>#<n>', array['<repo>', ...]) returning id;
 update knowledge.sessions set ended_at = now(), summary = 'Built the cancel flow for #41, tests green, merged.' where id = '<session>';
 ```
 Ids lost after a compaction: pass `'{}'`, the notes of this session are found through `session`. The kinds `state` and `next` stay for notes that are not a boundary.
