@@ -51,9 +51,10 @@ insert into knowledge.handoffs (project, session, text, notes, task_ref, repos) 
 update knowledge.sessions set ended_at = now(), summary = 'Built the cancel flow for #41, tests green, merged.' where id = '<session>';
 ```
 Ids lost after a compaction: pass `'{}'`, the notes of this session are found through `session`. The kinds `state` and `next` stay for notes that are not a boundary.
-Handoff rows are not history, the notes are: the newest row per UTC day stays, the per-turn rows of the day go. Run this delete at every session start, right after reading the newest handoff; it keeps the newest row of every day, today's included, so it is always safe and days apart do not matter:
+Handoff rows are not history, the notes are: the newest row per UTC day stays, the per-turn rows of the day go. Notes sort the same way: a fact, decision, recipe, incident, pointer or term is product or project truth and stays; a lesson becomes a line in the skill it binds the same day and the note only records who ruled and when; a `state` note lives until the newest handoff stops naming it; `next` is never a note (the handoff's NEXT line is); `summary` once per closed Epic. Run this delete at every session start, right after reading the newest handoff; it keeps the newest row of every day, today's included, so it is always safe and days apart do not matter:
 ```sql
 delete from knowledge.handoffs h where h.project = '<project>' and h.id not in (select distinct on ((created_at at time zone 'UTC')::date) id from knowledge.handoffs where project = '<project>' order by (created_at at time zone 'UTC')::date, created_at desc);
+delete from knowledge.notes where project = '<project>' and kind in ('state','next') and created_at < now() - interval '7 days' and key not like 'release-live-%' and id <> all ((select coalesce(notes, '{}') from knowledge.handoffs where project = '<project>' order by id desc limit 1));
 ```
 
 ## Finding things (either role)
