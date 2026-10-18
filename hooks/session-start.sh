@@ -118,7 +118,7 @@ SQL
               fi
             fi
 
-            echo "knowledge: read its notes: select n.id, n.kind, n.key, n.text from knowledge.notes n where n.id = any((select notes from knowledge.handoffs where id = ${h_id})) order by n.id"
+            echo "knowledge: read its notes: select n.id, n.kind, n.key, n.text from knowledge.notes n where n.id = any((select notes from knowledge.handoffs where id = ${h_id})::bigint[]) order by n.id"
           fi
         fi
       fi
